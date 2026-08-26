@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<!-- Khai báo file Manifest -->
+<link rel="manifest" href="manifest.json">
+
+<!-- Đăng ký Service Worker để thành App -->
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then((reg) => console.log('Đã đăng ký App thành công!', reg))
+      .catch((err) => console.log('Lỗi đăng ký App:', err));
+  }
+</script>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Klea OS - Life & Fin Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js & Treemap-->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-treemap"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- SheetJS (đọc/ghi file Excel) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
+        
+        .vision-cell, .month-cell, .planner-cell {
+            width: 100%; height: 100%; min-height: 90px; padding: 8px; border: none;
+            resize: none; background-color: transparent; font-family: inherit;
+            font-size: 11px; line-height: 1.5; display: block; box-sizing: border-box;
+            overflow-y: auto;
+        }
+        .planner-cell { min-height: 120px; padding-top: 24px; }
+        *:focus { outline: none; }
+        .vision-cell:focus, .month-cell:focus, .planner-cell:focus {
+            background-color: #ffffff;
+            box-shadow: inset 0 0 0 2px #4f46e5;
+            z-index: 10; position: relative;
+        }
+        
+        /* Styles from KleaFin */
+        .card { background-color: #ffffff; border-radius: 1.5rem; box-shadow: 0 4px 20px -2px rgb(0 0 0 / 0.05), 0 2px 10px -1px rgb(0 0 0 / 0.03); border: 1px solid rgba(16, 185, 129, 0.1); }
+        .progress-bar-fill { transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="text-slate-800 transition-colors duration-200 pb-12">
+
+    <!-- TOOLTIP CHO PREVIEW LỊCH SỬ -->
+    <div id="custom-tooltip" class="hidden fixed z-[9999] bg-slate-800 text-white text-xs rounded-lg p-3 shadow-xl max-w-xs whitespace-pre-wrap pointer-events-none transition-opacity duration-200 opacity-0"></div>
+
+    <div class="max-w-[1700px] mx-auto p-4 sm:p-6 space-y-6">
+
+        <!-- HEADER -->
+        <header class="bg-white border border-slate-100 rounded-2xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-xs">
+            <div class="flex items-center gap-3">
+                <span class="text-3xl">🍀</span>
+                <div>
+                    <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Klea OS</h1>
+                    <p class="text-xs text-slate-500 mt-0.5">Your Life & Finance System</p>
+                </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-4 w-full md:w-auto justify-end">
+                <div class="bg-[#008f68] px-4 py-2 rounded-xl flex items-center gap-2 text-white shadow-xs">
+                    <span class="text-sm">🔥</span>
+                    <div class="text-left">
+                        <div class="text-[9px] text-emerald-100 uppercase tracking-widest font-bold">Klea's Progress</div>
+                        <div class="font-extrabold text-xs" id="progressSummary">0 Ngày</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-1.5 text-xs">
+                    <label for="excel-upload" class="cursor-pointer bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg font-medium shadow-xs hover:bg-slate-50 transition-all flex items-center gap-1.5">
+                        <i data-lucide="upload-cloud" class="w-3.5 h-3.5 text-emerald-600"></i> Input
+                    </label>
+                    <input type="file" id="excel-upload" class="hidden" accept=".xlsx, .xls" onchange="handleExcelUpload(event)">
+                    <span id="file-name" class="text-slate-500 font-medium truncate max-w-[120px] pr-2">No file</span>
+                </div>
+                <button onclick="exportToExcel()" class="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer">
+                    <i data-lucide="download" class="w-3.5 h-3.5 text-indigo-500"></i> Output
+                </button>
+            </div>
+        </header>
+
+        <!-- TABS NAV -->
+        <div class="flex border-b border-slate-200">
+            <button onclick="switchTab('dashboard')" id="tab-btn-dashboard" class="px-5 py-3 border-b-2 font-bold text-sm transition-all flex items-center gap-2 cursor-pointer"><i data-lucide="layout-dashboard" class="w-4 h-4"></i> Dashboard</button>
+            <button onclick="switchTab('planner')" id="tab-btn-planner" class="px-5 py-3 border-b-2 font-bold text-sm transition-all flex items-center gap-2 cursor-pointer"><i data-lucide="calendar" class="w-4 h-4"></i> Track E++</button>
+            <button onclick="switchTab('finance')" id="tab-btn-finance" class="px-5 py-3 border-b-2 font-bold text-sm transition-all flex items-center gap-2 cursor-pointer"><i data-lucide="wallet" class="w-4 h-4"></i> KleaFin Center</button>
+        </div>
+
+        <!-- TAB 1: DASHBOARD -->
+        <div id="tab-dashboard" class="space-y-6">
+            <!-- SECTION PROGRESS, FOCUS, HABITS -->
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <div class="lg:col-span-2 bg-white border border-slate-100 rounded-2xl p-5 shadow-xs">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">PROGRESS NĂM</span>
+                            <h3 class="text-base font-bold text-slate-800 mt-0.5">Tiến độ hoàn thành Năm 2026</h3>
+                        </div>
+                        <button onclick="openGoalEditor()" class="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-700 transition" title="Chỉnh sửa mục tiêu năm"><i data-lucide="edit" class="w-3.5 h-3.5"></i></button>
+                    </div>
+                    <div class="w-full bg-slate-100 h-2.5 rounded-full mt-3"><div id="year-progress-bar" class="bg-[#008f68] h-full rounded-full transition-all duration-500" style="width: 0%"></div></div>
+                    <div id="year-goals-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2 mt-4 text-xs font-medium text-slate-700"></div>
+                </div>
+                <div class="bg-[#0c1322] border border-slate-800 rounded-2xl p-4 shadow-md text-white flex flex-col h-full">
+                    <div class="flex items-center gap-1.5 mb-2"><i data-lucide="target" class="w-3.5 h-3.5 text-emerald-400"></i><span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider">QLY FOCUS</span></div>
+                    <textarea id="qly-focus-textarea" class="w-full bg-[#182235] text-slate-100 rounded-xl p-2.5 border border-slate-700 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none font-medium leading-relaxed custom-scrollbar flex-1" oninput="saveFocus(this.value)"></textarea>
+                    <div class="mt-2 flex justify-between items-center text-[8px] text-slate-500 border-t border-slate-800/80 pt-2"><span>Lưu tự động trên Klea OS</span><span class="flex items-center gap-0.5 text-emerald-400"><span class="w-1 h-1 rounded-full bg-emerald-400"></span>Active</span></div>
+                </div>
+                <div class="bg-white border border-slate-100 rounded-2xl p-5 shadow-xs flex flex-col h-full">
+                    <div class="flex justify-between items-center">
+                        <div><span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">HABIT TRACKER</span><h3 class="text-base font-bold text-slate-800 mt-0.5">Thói quen Bền vững</h3></div>
+                        <button onclick="openHabitEditor()" class="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-500 hover:text-slate-700 transition" title="Chỉnh sửa thói quen"><i data-lucide="settings-2" class="w-3.5 h-3.5"></i></button>
+                    </div>
+                    <div id="habit-tracker-list" class="space-y-3 mt-4 flex-1 overflow-y-auto custom-scrollbar max-h-[160px] pr-1"></div>
+                </div>
+            </div>
+            
+            <!-- SECTION LOGGING & CHARTS -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                 <!-- FORM GHI NHẬN NGÀY MỚI -->
+                <div class="lg:col-span-1 bg-white border border-slate-100 rounded-2xl p-6 shadow-xs space-y-4 h-fit">
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div class="flex items-center gap-2">
+                            <button onclick="switchTab('planner')" class="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-[#008f68] rounded-lg border border-emerald-100 transition-all cursor-pointer" title="Lập kế hoạch trước (Track E++)"><i data-lucide="pencil-line" class="w-4 h-4"></i></button>
+                            <h3 class="text-base font-bold text-slate-900" id="form-header-title">Ghi Nhận Ngày Mới</h3>
+                        </div>
+                        <button id="btn-cancel-edit" onclick="cancelEditMode()" class="hidden px-2.5 py-1 bg-rose-50 text-rose-600 rounded-lg border border-rose-100 font-semibold text-[10px] hover:bg-rose-100 transition cursor-pointer">Hủy sửa</button>
+                    </div>
+
+                    <div class="space-y-3.5">
+                        <div><label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Ngày Log</label><input type="date" id="input-date" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-[#008f68] transition-all font-semibold" onchange="loadPlannedMITForDate(this.value); updateMiniBadges(this.value); renderHabitTracker();"></div>
+                        
+                        <div id="planned-preview-box" class="bg-emerald-50/30 border border-emerald-100/50 rounded-xl p-3.5 space-y-2 hidden">
+                            <span class="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Planned Ahead</span>
+                            <div><label class="block text-[9px] font-semibold text-slate-400 uppercase mb-0.5">MIT:</label><textarea id="input-planned-mit" rows="4" class="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium text-slate-700 custom-scrollbar" oninput="syncPlannedToDB()"></textarea></div>
+                            <div><label class="block text-[9px] font-semibold text-slate-400 uppercase mb-0.5">Ghi chú (notes):</label><input type="text" id="input-planned-notes" class="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium text-slate-700" oninput="syncPlannedToDB()"></div>
+                        </div>
+                        
+                        <div><label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nhật Ký MIT (Thực tế làm)</label><textarea id="input-mit-diary" rows="4" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#008f68] transition-all placeholder-slate-400 text-slate-700 font-medium custom-scrollbar" placeholder=" done 3/4 MIT..."></textarea></div>
+                        <div><label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Notes</label><textarea id="input-notes" rows="4" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#008f68] transition-all placeholder-slate-400 text-slate-700 font-medium custom-scrollbar" placeholder="Ghi nhận cảm xúc..."></textarea></div>
+                        
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider text-center mb-2">Số lượng MIT hoàn thành</label>
+                            <div class="grid grid-cols-5 gap-1.5">
+                                <div class="text-center"><span class="text-[9px] font-bold text-blue-500 block mb-1">Job</span><input type="number" id="input-p-job" min="0" value="0" class="w-full text-center bg-slate-50 border rounded-lg py-1 text-xs" oninput="calculateRealTimeScore()"></div>
+                                <div class="text-center"><span class="text-[9px] font-bold text-emerald-500 block mb-1">Health</span><input type="number" id="input-p-hea" min="0" value="0" class="w-full text-center bg-slate-50 border rounded-lg py-1 text-xs" oninput="calculateRealTimeScore()"></div>
+                                <div class="text-center"><span class="text-[9px] font-bold text-amber-500 block mb-1">Fin</span><input type="number" id="input-p-fin" min="0" value="0" class="w-full text-center bg-slate-50 border rounded-lg py-1 text-xs" oninput="calculateRealTimeScore()"></div>
+                                <div class="text-center"><span class="text-[9px] font-bold text-purple-500 block mb-1">Learn</span><input type="number" id="input-p-lea" min="0" value="0" class="w-full text-center bg-slate-50 border rounded-lg py-1 text-xs" oninput="calculateRealTimeScore()"></div>
+                                <div class="text-center"><span class="text-[9px] font-bold text-rose-500 block mb-1">Fam</span><input type="number" id="input-p-fam" min="0" value="0" class="w-full text-center bg-slate-50 border rounded-lg py-1 text-xs" oninput="calculateRealTimeScore()"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Thưởng bám sát</label>
+                            <div class="grid grid-cols-2 gap-1.5 text-[10px] font-medium">
+                                <label class="flex items-center gap-1.5 p-1.5 bg-slate-50 rounded-lg cursor-pointer"><input type="checkbox" id="bonus-week" class="rounded text-[#008f68] cursor-pointer" onchange="calculateRealTimeScore()"><span>Trúng Tuần</span></label>
+                                <label class="flex items-center gap-1.5 p-1.5 bg-slate-50 rounded-lg cursor-pointer"><input type="checkbox" id="bonus-month" class="rounded text-[#008f68] cursor-pointer" onchange="calculateRealTimeScore()"><span>Trúng Tháng</span></label>
+                            </div>
+                        </div>
+                        <button onclick="saveDailyLog()" class="w-full bg-[#008f68] hover:bg-[#057a58] text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 text-xs uppercase tracking-wider"><i data-lucide="check-circle" class="w-4 h-4"></i>Ghi Nhận</button>
+                    </div>
+                </div>
+                
+                 <!-- ĐỒ THỊ -->
+                <div class="lg:col-span-2 space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white border border-slate-100 rounded-2xl p-6 shadow-xs">
+                        <div class="flex flex-col justify-between space-y-4">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2"><i data-lucide="compass" class="w-4 h-4 text-indigo-500"></i><h3 class="text-sm font-bold text-slate-800">Radar Trọng Tâm</h3></div>
+                                <select id="radar-filter" onchange="initRadarChart()" class="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-[11px]"><option value="day">Hôm nay</option><option value="month" selected>Tháng này</option><option value="quarter">Quý này</option><option value="year">Năm này</option></select>
+                            </div>
+                            <div class="bg-slate-50 border border-slate-200/50 rounded-xl p-2.5">
+                                <div class="flex flex-wrap justify-between items-center text-[10px] font-bold gap-2">
+                                    <div class="flex items-center gap-1 text-blue-600"><span>💼 J:</span><span id="radar-sum-job" class="font-extrabold text-slate-800 bg-white px-1.5 py-0.5 rounded border">0</span></div>
+                                    <div class="flex items-center gap-1 text-emerald-600"><span>🥗 H:</span><span id="radar-sum-hea" class="font-extrabold text-slate-800 bg-white px-1.5 py-0.5 rounded border">0</span></div>
+                                    <div class="flex items-center gap-1 text-amber-600"><span>💰 F:</span><span id="radar-sum-fin" class="font-extrabold text-slate-800 bg-white px-1.5 py-0.5 rounded border">0</span></div>
+                                    <div class="flex items-center gap-1 text-purple-600"><span>📖 L:</span><span id="radar-sum-lea" class="font-extrabold text-slate-800 bg-white px-1.5 py-0.5 rounded border">0</span></div>
+                                    <div class="flex items-center gap-1 text-rose-600"><span>🏠 Fa:</span><span id="radar-sum-fam" class="font-extrabold text-slate-800 bg-white px-1.5 py-0.5 rounded border">0</span></div>
+                                </div>
+                            </div>
+                            <div class="h-[180px] w-full relative flex items-center justify-center"><canvas id="radarChartCanvas"></canvas></div>
+                        </div>
+                        <div class="flex flex-col justify-between space-y-4 border-l border-slate-100 pl-0 md:pl-6">
+                            <div class="flex flex-col gap-2">
+                                <div class="flex items-center justify-between"><div class="flex items-center gap-2"><i data-lucide="trending-up" class="w-4 h-4 text-emerald-500"></i><h3 class="text-sm font-bold text-slate-800">Daily Scoring</h3></div></div>
+                                <div class="flex flex-wrap gap-1">
+                                    <div class="bg-blue-50/50 border rounded-lg px-1.5 py-0.5 flex items-center gap-1 min-w-[38px] justify-center"><span class="text-[8px] font-bold text-blue-500">J:</span><span class="text-[10px] font-bold" id="score-job">0</span></div>
+                                    <div class="bg-emerald-50/50 border rounded-lg px-1.5 py-0.5 flex items-center gap-1 min-w-[38px] justify-center"><span class="text-[8px] font-bold text-emerald-500">H:</span><span class="text-[10px] font-bold" id="score-hea">0</span></div>
+                                    <div class="bg-amber-50/50 border rounded-lg px-1.5 py-0.5 flex items-center gap-1 min-w-[38px] justify-center"><span class="text-[8px] font-bold text-amber-500">F:</span><span class="text-[10px] font-bold" id="score-fin">0</span></div>
+                                    <div class="bg-purple-50/50 border rounded-lg px-1.5 py-0.5 flex items-center gap-1 min-w-[38px] justify-center"><span class="text-[8px] font-bold text-purple-500">L:</span><span class="text-[10px] font-bold" id="score-lea">0</span></div>
+                                    <div class="bg-rose-50/50 border rounded-lg px-1.5 py-0.5 flex items-center gap-1 min-w-[38px] justify-center"><span class="text-[8px] font-bold text-rose-500">Fa:</span><span class="text-[10px] font-bold" id="score-fam">0</span></div>
+                                </div>
+                            </div>
+                            <div class="h-[220px] w-full relative"><canvas id="dailyScoringChartCanvas"></canvas></div>
+                        </div>
+                    </div>
+                    
+                    <!-- LỊCH SỬ LOG -->
+                    <div class="bg-white border border-slate-100 rounded-2xl shadow-xs overflow-hidden">
+                        <div class="p-6 border-b border-slate-100 flex justify-between items-center gap-4">
+                            <div><h3 class="text-lg font-bold text-slate-900">Nhật Ký Lịch Sử</h3><p class="text-xs text-slate-500">Xem và quản lý tất cả các log dữ liệu</p></div>
+                            <div class="flex items-center gap-2"><input type="text" id="log-search" oninput="filterLogs()" class="bg-slate-50 border rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-violet-500" placeholder="Tìm kiếm log..."></div>
+                        </div>
+                        <div class="overflow-auto custom-scrollbar max-h-[350px]">
+                            <table class="w-full text-left border-collapse min-w-[900px]">
+                                <thead class="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200 sticky top-0 z-10">
+                                    <tr><th class="py-3 px-6">Pillars</th><th class="py-3 px-6 text-center">Score</th><th class="py-3 px-6 text-center">Action</th><th class="py-3 px-6">Ngày Log</th><th class="py-3 px-6">Nhật Ký MIT</th><th class="py-3 px-6">Notes</th></tr>
+                                </thead>
+                                <tbody id="logs-table-body" class="divide-y divide-slate-100 text-xs font-medium"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: TRACK E++ -->
+        <div id="tab-planner" class="space-y-6 hidden">
+            <!-- LIFE COMPASS -->
+            <div class="bg-white border border-slate-100 rounded-2xl p-6 shadow-xs">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4 mb-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900 flex items-center gap-2"><i data-lucide="compass" class="w-6 h-6 text-violet-600"></i>Life Compass: Vision 50</h2>
+                        <p class="text-xs text-slate-500 mt-1 font-medium">Bản đồ chiến lược cuộc đời, hiển thị 3 năm gần nhất của mỗi giai đoạn.</p>
+                    </div>
+                    <select id="vision-stage-filter" onchange="switchVisionStage(this.value)" class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500 cursor-pointer font-semibold">
+                        <option value="30s" selected>GĐ 30 tuổi (26-30)</option><option value="35s">GĐ 35 tuổi (31-40)</option>
+                        <option value="45s">GĐ 45 tuổi (41-50)</option><option value="55s">GĐ 55 tuổi (51-60)</option>
+                    </select>
+                </div>
+                <div id="vision-tables-container" class="border border-slate-200 rounded-xl overflow-hidden overflow-x-auto custom-scrollbar">
+                    <!-- JS RENDER -->
+                </div>
+            </div>
+
+            <!-- MONTH COMPASS -->
+            <div class="bg-white border border-slate-100 rounded-2xl p-6 shadow-xs mt-6">
+                <div class="flex justify-between items-center gap-4 border-b border-slate-100 pb-4 mb-4">
+                     <div>
+                        <h2 class="text-xl font-bold text-slate-900 flex items-center gap-2"><i data-lucide="map" class="w-6 h-6 text-blue-600"></i>Month Compass (2026)</h2>
+                        <p class="text-xs text-slate-500 mt-1 font-medium">Chiến lược chi tiết theo từng tháng trong năm.</p>
+                    </div>
+                </div>
+                <div id="month-compass-container" class="border border-slate-200 rounded-xl overflow-hidden max-h-[380px] overflow-y-auto custom-scrollbar">
+                    <!-- JS RENDER -->
+                </div>
+            </div>
+
+            <!-- TRACKE++ FUTURE PLANNER -->
+            <div class="bg-white border border-slate-100 rounded-2xl p-6 shadow-xs mt-6">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4 mb-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+                            <button onclick="switchTab('dashboard')" class="text-emerald-600 hover:text-emerald-700 transition" title="Quay về Dashboard">
+                                <i data-lucide="calendar-check" class="w-6 h-6"></i>
+                            </button>
+                            TrackE++ Future Planner
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-1 font-medium pl-8">Lập kế hoạch dạng lưới cho 4 tuần sắp tới.</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="navigatePlannerWeeks(-4)" class="px-3 py-2 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 text-slate-600 font-semibold text-xs transition cursor-pointer flex items-center gap-1"><i data-lucide="chevron-left" class="w-3 h-3"></i> 4 Tuần trước</button>
+                        <button onclick="resetPlannerToToday()" class="px-4 py-2 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 text-slate-800 font-semibold text-xs transition cursor-pointer">Hôm nay</button>
+                        <button onclick="navigatePlannerWeeks(4)" class="px-3 py-2 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 text-slate-600 font-semibold text-xs transition cursor-pointer flex items-center gap-1">4 Tuần sau <i data-lucide="chevron-right" class="w-3 h-3"></i></button>
+                    </div>
+                </div>
+                <div class="border border-slate-200 rounded-xl overflow-x-auto custom-scrollbar">
+                    <table class="w-full min-w-[1200px] border-collapse text-xs table-fixed">
+                        <thead class="sticky top-0 z-10 bg-slate-100">
+                            <tr>
+                                <th class="py-2.5 px-3 border-b border-r border-slate-200 w-[80px] text-slate-700 font-bold text-center" id="planner-month-year">Tháng 8</th>
+                                <th class="py-2.5 px-3 border-b border-r border-slate-200 text-slate-700 font-bold text-center">Thứ Hai</th>
+                                <th class="py-2.5 px-3 border-b border-r border-slate-200 text-slate-700 font-bold text-center">Thứ Ba</th>
+                                <th class="py-2.5 px-3 border-b border-r border-slate-200 text-slate-700 font-bold text-center">Thứ Tư</th>
+                                <th class="py-2.5 px-3 border-b border-r border-slate-200 text-slate-700 font-bold text-center">Thứ Năm</th>
+                                <th class="py-2.5 px-3 border-b border-r border-slate-200 text-slate-700 font-bold text-center">Thứ Sáu</th>
+                                <th class="py-2.5 px-3 border-b border-r border-slate-200 text-slate-700 font-bold text-center">Thứ Bảy</th>
+                                <th class="py-2.5 px-3 border-b border-slate-200 text-slate-700 font-bold text-center">Chủ Nhật</th>
+                            </tr>
+                        </thead>
+                        <tbody id="planner-grid-body" class="divide-y divide-slate-200">
+                            <!-- JS RENDER -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- TAB 3: FINANCE -->
+        <div id="tab-finance" class="space-y-6 hidden">
+             <div class="space-y-8">
+                <!-- TASK 3: LỘ TRÌNH FIRE & 13 HŨ TÀI SẢN -->
+                <section class="card p-6 space-y-6">
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                            <h2 class="text-2xl font-bold text-emerald-950 flex items-center gap-2">
+                                🚀 Task 3: Lộ trình FIRE & 13 Hũ Tài Sản
+                            </h2>
+                            <p class="text-sm text-slate-500">So sánh trực tiếp mục tiêu của từng hũ tài sản (Tab FIRE) vs. Số dư thực tế (Tab IS).</p>
+                        </div>
+                        <!-- Year Dynamic Selector -->
+                        <div class="flex items-center gap-2.5 bg-emerald-50 p-2 rounded-xl border border-emerald-100">
+                            <span class="text-xs font-bold text-emerald-800 flex items-center gap-1">
+                                <i data-lucide="calendar" class="w-4 h-4"></i> Năm đối chiếu:
+                            </span>
+                            <select id="fire-year-select" onchange="renderFireProgress()" class="text-xs font-extrabold bg-white border border-emerald-200 text-emerald-900 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                                <option value="2025">2025</option>
+                                <option value="2026" selected>2026</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        <!-- Big Card 1: Ultimate FIRE Jar -->
+                        <div class="lg:col-span-3 card bg-gradient-to-br from-emerald-50 to-white p-6 flex flex-col items-center justify-center border border-emerald-200/60 relative">
+                             <span class="absolute top-3 right-3 text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">Trọn đời</span>
+                             <h3 class="font-bold text-emerald-900 text-center mb-1 text-sm">Mục tiêu FIRE tối thượng</h3>
+                             <p class="text-[10px] text-slate-400 mb-4 text-center">Đến mốc 56 tuổi (Năm 2053)</p>
+                             <div class="relative w-32 h-44 my-2">
+                                <img src="https://storage.googleapis.com/testing-197821/agent_outputs/d7f7dd25-c6f3-42e8-964c-70e6717a61d1/jar-empty.png" class="absolute inset-0 w-full h-full object-contain">
+                                <div id="fire-jar-fill" class="absolute bottom-2 left-[12%] right-[12%] bg-gradient-to-t from-yellow-400 to-amber-500 rounded-b-2xl transition-all duration-1000" style="height: 0%; max-height: 80%;"></div>
+                                <img src="https://storage.googleapis.com/testing-197821/agent_outputs/d7f7dd25-c6f3-42e8-964c-70e6717a61d1/jar-gloss.png" class="absolute inset-0 w-full h-full object-contain">
+                             </div>
+                             <div class="text-center mt-3 w-full">
+                                <p id="fire-progress-text" class="text-2xl font-extrabold text-amber-600">0.00%</p>
+                                <div class="border-t border-dashed border-emerald-100 mt-2 pt-2 text-[11px] text-slate-500 space-y-0.5">
+                                    <p>Thực tế: <span id="current-asset-display" class="font-bold text-slate-700">0 đ</span></p>
+                                    <p>Mục tiêu: <span id="fire-target-display" class="font-bold text-emerald-700">71.21 tỷ</span></p>
+                                </div>
+                             </div>
+                        </div>
+
+                        <!-- Big Card 2: Annual Goal Card -->
+                        <div class="lg:col-span-3 card bg-gradient-to-br from-blue-50/60 to-white p-6 flex flex-col items-center justify-center border border-blue-100 relative">
+                             <span class="absolute top-3 right-3 text-[10px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full" id="annual-badge-year">Năm 2026</span>
+                             <h3 class="font-bold text-blue-950 text-center mb-1 text-sm">Mục tiêu của Năm chọn</h3>
+                             <p class="text-[10px] text-slate-400 mb-4 text-center">Tiến độ năm hiện hành</p>
+                             <div class="relative w-32 h-44 my-2">
+                                <img src="https://storage.googleapis.com/testing-197821/agent_outputs/d7f7dd25-c6f3-42e8-964c-70e6717a61d1/jar-empty.png" class="absolute inset-0 w-full h-full object-contain">
+                                <div id="annual-jar-fill" class="absolute bottom-2 left-[12%] right-[12%] bg-gradient-to-t from-blue-400 to-indigo-500 rounded-b-2xl transition-all duration-1000" style="height: 0%; max-height: 80%;"></div>
+                                <img src="https://storage.googleapis.com/testing-197821/agent_outputs/d7f7dd25-c6f3-42e8-964c-70e6717a61d1/jar-gloss.png" class="absolute inset-0 w-full h-full object-contain">
+                             </div>
+                             <div class="text-center mt-3 w-full">
+                                <p id="annual-progress-text" class="text-2xl font-extrabold text-blue-700">0.00%</p>
+                                <div class="border-t border-dashed border-blue-100 mt-2 pt-2 text-[11px] text-slate-500 space-y-0.5">
+                                    <p>Thực tế năm: <span id="annual-actual-display" class="font-bold text-slate-700">0 đ</span></p>
+                                    <p>Mục tiêu năm: <span id="annual-target-display" class="font-bold text-blue-800">0 đ</span></p>
+                                </div>
+                             </div>
+                        </div>
+
+                        <!-- 13 Jars Detail Progress Grid -->
+                        <div class="lg:col-span-6 card p-6">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="font-bold text-slate-800 flex items-center gap-1.5 text-base">
+                                    <i data-lucide="layers" class="w-5 h-5 text-emerald-600"></i> Đối chiếu chi tiết Hũ Tài Sản
+                                </h3>
+                                <span class="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">Theo thứ tự phân mục tiêu cá nhân</span>
+                            </div>
+                            <div id="jars-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                <div class="text-center text-sm text-slate-400 py-12 col-span-full">Vui lòng nạp file để xem các hũ tài sản tương thích.</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TASK 1: DÒNG TIỀN HÀNG THÁNG -->
+                <section class="card p-6 space-y-6">
+                    <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                        <h2 class="text-2xl font-bold text-emerald-950 flex items-center gap-2">
+                            💵 Task 1: Cập nhật & Đối chiếu Dòng tiền Tháng
+                        </h2>
+                        <!-- Log Date -->
+                        <div class="flex items-center gap-2">
+                            <label class="text-xs font-bold text-slate-500">Ngày log:</label>
+                            <input type="date" id="fin-log-date" class="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold focus:ring-1 focus:ring-emerald-500 focus:outline-none">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        <!-- Form Input Areas -->
+                        <div class="lg:col-span-4 space-y-4">
+                            <h3 class="font-semibold text-emerald-800 text-xs uppercase tracking-wider px-1">Các ô tự nhập liệu (Từ tab 'Sal')</h3>
+
+                            <!-- Scrollable Form Inputs -->
+                            <div id="salary-input-form" class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar border border-slate-100 p-3 rounded-xl bg-slate-50/50">
+                                <!-- Generated by JS -->
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <button onclick="saveCurrentFinLog()" class="bg-blue-600 text-white font-bold py-2.5 rounded-xl hover:bg-blue-700 transition shadow-sm flex items-center justify-center gap-1.5 text-xs">
+                                    <i data-lucide="save" class="w-3.5 h-3.5"></i> Lưu ngày mới
+                                </button>
+                                <button onclick="calculateAndDisplay()" class="bg-emerald-600 text-white font-bold py-2.5 rounded-xl hover:bg-emerald-700 transition shadow-sm flex items-center justify-center gap-1.5 text-xs">
+                                    <i data-lucide="calculator" class="w-3.5 h-3.5"></i> Tính toán
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Comparison Outputs & Rules Guidelines -->
+                        <div class="lg:col-span-8 space-y-6">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <!-- Left: Comparison Results -->
+                                <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                                    <h3 class="font-bold text-blue-900 flex items-center gap-1.5 text-xs">
+                                        <i data-lucide="activity" class="w-4 h-4"></i> Đối chiếu Dòng tiền
+                                    </h3>
+                                    <div id="comparison-output" class="space-y-2 text-[11px]">
+                                        <!-- Dynamic formulas calculated -->
+                                    </div>
+                                </div>
+
+                                <!-- Middle: Liquidity and Allocation % (Ex BDS) -->
+                                <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                                    <h3 class="font-bold text-emerald-950 flex items-center gap-1.5 text-xs">
+                                        <i data-lucide="droplet" class="w-4 h-4 text-emerald-600"></i> Thanh khoản tức thời
+                                    </h3>
+                                    <div id="liquidity-output" class="space-y-2 text-[11px]">
+                                        <p class="text-slate-400 italic">Vui lòng tải file Excel để tính toán tự động.</p>
+                                    </div>
+                                </div>
+
+                                <!-- Right: Moly Quy trình guideline -->
+                                <div class="bg-gradient-to-br from-emerald-50/30 to-white p-4 rounded-2xl border border-emerald-100/50 shadow-sm space-y-3">
+                                    <h3 class="font-bold text-emerald-900 flex items-center gap-1.5 text-xs">
+                                        <i data-lucide="book-open" class="w-4 h-4"></i> Quy trình Moly
+                                    </h3>
+                                    <div class="text-[10px] text-slate-600 leading-relaxed space-y-1.5 max-h-[160px] overflow-y-auto custom-scrollbar pr-1">
+                                        <p class="font-bold bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded text-[9px]">QUY CHUẨN ĐẦU THÁNG:</p>
+                                        <p>Nhập salary me &gt; trả nợ vikki &gt; trả nợ tín dụng vk &gt; phí QL &gt; Emer 01 10tr + Emer 02 1tr + Nuôi con 3tr &gt; Saving 1mon thêm (Dư sal vk - 14tr) &gt; Ck ck thêm &gt; Mua 1 chỉ vàng (if any) &gt; Saving thêm af vàng &gt; nếu trong tháng phải phá saving ra tiêu thêm thì phải note lại lí do :)</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Monthly flow comparison chart (Historical over months) with scroll wrapper -->
+                            <div class="card p-5 space-y-3">
+                                <div class="flex justify-between items-center">
+                                    <h3 class="font-semibold text-emerald-800 flex items-center gap-1.5 text-sm">
+                                        <i data-lucide="trending-up" class="w-4 h-4"></i> Biểu đồ Dòng tiền In vs. Out theo Tháng (Triệu đồng)
+                                    </h3>
+                                    <!-- Flow chart filter year -->
+                                    <select id="flow-year-select" onchange="renderFlowChartHistorical()" class="text-xs bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1 focus:outline-none">
+                                        <option value="2026">Năm 2026</option>
+                                        <option value="2025">Năm 2025</option>
+                                    </select>
+                                </div>
+                                <!-- Scroll container setup - Scrollable Horizontal Teal -->
+                                <div class="overflow-x-auto custom-scrollbar pb-2">
+                                    <div class="min-w-[800px] h-48 relative">
+                                        <canvas id="flow-comparison-chart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Log History -->
+                    <div class="border-t border-slate-100 pt-6 space-y-3">
+                        <div class="flex justify-between items-center">
+                            <h3 class="font-semibold text-slate-800 flex items-center gap-1.5 text-sm">
+                                <i data-lucide="history" class="w-4.5 h-4.5 text-slate-500"></i> Lịch sử Ghi nhận &amp; Lưu trữ Ngày mới
+                            </h3>
+                            <button onclick="exportFinLogsToCSV()" class="bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 font-semibold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition">
+                                <i data-lucide="download" class="w-3.5 h-3.5"></i> Xuất dữ liệu CSV
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto custom-scrollbar border border-slate-100 rounded-xl bg-white max-h-[160px]">
+                            <table class="min-w-full text-xs text-left">
+                                <thead class="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-100">
+                                    <tr>
+                                        <th class="px-4 py-2 font-bold">Ngày Log</th>
+                                        <th class="px-4 py-2 font-bold">Salary me</th>
+                                        <th class="px-4 py-2 font-bold">Salary him</th>
+                                        <th class="px-4 py-2 font-bold">Ck đưa actual</th>
+                                        <th class="px-4 py-2 font-bold">Dòng tiền In (Thực tế)</th>
+                                        <th class="px-4 py-2 font-bold">Chi tiêu Out</th>
+                                        <th class="px-4 py-2 font-bold">Tiêu lố</th>
+                                        <th class="px-4 py-2 font-bold">Ghi chú</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="log-table-body-fin" class="divide-y divide-slate-50">
+                                    <tr>
+                                        <td colspan="8" class="px-4 py-4 text-center text-slate-400">Chưa có lịch sử ghi nhận mới. Thêm ngày mới để hiển thị tại đây.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TASK 2: PHÂN BỔ & TĂNG TRƯỞNG TÀI SẢN -->
+                <section class="card p-6 space-y-6">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div>
+                            <h2 class="text-2xl font-bold text-emerald-950 flex items-center gap-2">
+                                🏢 Task 2: Phân bổ & Tăng trưởng Tài sản
+                            </h2>
+                            <p class="text-sm text-slate-500">Chi tiết phân bổ cơ cấu tài sản loại trừ BĐS và lịch sử tăng trưởng tài sản tổng hợp.</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <!-- Treemap chart (Excluding BDS) -->
+                        <div class="card p-4 space-y-3">
+                            <div class="flex justify-between items-center">
+                                <h3 class="font-semibold text-slate-800 text-sm">Cơ cấu Tài sản (Loại trừ BĐS)</h3>
+                                <span class="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-medium">Biểu đồ Treemap</span>
+                            </div>
+                            <div class="h-[350px] relative w-full">
+                                <canvas id="asset-treemap-chart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Combined Assets Growth Chart (With horizontal scroll) -->
+                        <div class="card p-4 space-y-3">
+                            <div class="flex flex-wrap justify-between items-center gap-y-2">
+                                <h3 class="font-semibold text-slate-800 text-sm">Lịch sử tăng trưởng Tổng tài sản</h3>
+                                <div class="flex items-center gap-2">
+                                     <select id="asset-type-filter" onchange="renderAssetCharts()" class="text-xs font-semibold bg-blue-50 border border-blue-200 text-blue-800 rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500">
+                                        <!-- Options generated by JS -->
+                                    </select>
+                                    <select id="asset-timescale-filter" onchange="renderAssetCharts()" class="text-xs font-semibold bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-3 py-2 focus:ring-2 focus:ring-emerald-500">
+                                        <option value="monthly">Theo Tháng</option>
+                                        <option value="quarterly">Theo Quý</option>
+                                        <option value="yearly">Theo Năm</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="overflow-x-auto custom-scrollbar pb-3">
+                                <div class="min-w-[550px] h-[280px]">
+                                    <canvas id="asset-growth-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL EDIT GOALS & HABITS -->
+    <div id="editor-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl border-slate-100 space-y-4">
+            <h3 class="text-lg font-bold text-slate-900" id="editor-title"></h3>
+            <div id="editor-list" class="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2"></div>
+            <div class="flex justify-between items-center pt-4 border-t border-slate-100">
+                <button onclick="addItemToEditor()" class="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1"><i data-lucide="plus" class="w-4 h-4"></i> Thêm mới</button>
+                <div>
+                    <button onclick="closeEditor()" class="px-4 py-2 border rounded-xl hover:bg-slate-50 text-xs font-semibold">Hủy</button>
+                    <button onclick="saveEditor()" class="px-5 py-2 bg-blue-600 text-white font-semibold rounded-xl text-xs ml-2">Lưu</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    // =========================================================================
+    // ==================== STATE & GLOBAL VARS ================================
+    // =========================================================================
+    let dailyScoringChart = null, radarChart = null, flowChart = null, treemapChart = null, growthChart = null;
+    let plannerBaseDate = new Date('2026-08-24');
+    let isEditMode = false, editTargetDate = '';
+    let currentGoalEditor = null;
+    let plannerTabLoaded = false, financeTabLoaded = false;
+
+    // --- Data Stores ---
+    let dailyLogs = JSON.parse(localStorage.getItem('dailyLogs')) || [];
+    let plannerDB = JSON.parse(localStorage.getItem('plannerDB')) || {};
+    let focusDB = JSON.parse(localStorage.getItem('focusDB')) || { qly: "01. Rory's visit\\n02. Health" };
+    let yearGoals = JSON.parse(localStorage.getItem('yearGoals')) || [ { text: "Health: 50kg + Máu tốt", done: true }, { text: "Job: Grade 6 (Apr'26)", done: true } ];
+    let habits = JSON.parse(localStorage.getItem('habits')) || [ { name: "Đọc sách 15p", streak: 5, lastLog: "2026-08-20" }, { name: "Thiền 5p", streak: 23, lastLog: "2026-08-21" } ];
+    let financialData = { sal: [], is: [], fire: [], localLogs: [] };
+    
+    const visionData = { "30s": { stageTitle: "GĐ 30s: Khởi đầu & Xây Gốc rễ (26-30)", years: { "2026":{focus:""}, "2027":{}, "2028":{}, "2029":{}, "2030":{} } }, "35s": { stageTitle: "GĐ 35s: Tăng tốc & Bứt phá (31-40)", years: { "2031":{}, "2032":{}, "2033":{}, "2034":{}, "2035":{}, "2036":{}, "2037":{}, "2038":{}, "2039":{}, "2040":{} } }, "45s": { stageTitle: "GĐ 45s: Di sản & Tự do (41-50)", years: { "2041":{}, "2042":{}, "2043":{}, "2044":{}, "2045":{}, "2046":{}, "2047":{}, "2048":{}, "2049":{}, "2050":{} } }, "55s": { stageTitle: "GĐ 55s: Viên mãn & Cho đi (51-60)", years: { "2051":{}, "2052":{},"2053":{}, "2054":{}, "2055":{}, "2056":{}, "2057":{}, "2058":{}, "2059":{}, "2060":{} } } };
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const initialMonthData = {}; monthNames.forEach(m => { initialMonthData[m] = { status: "", fam: "", health: "", career: "", fin: "", learn: "" }; });
+    
+    let storedVisionDB = JSON.parse(localStorage.getItem('visionDB'));
+    let visionDB = JSON.parse(JSON.stringify(visionData));
+    if (storedVisionDB) { for (const stage in storedVisionDB) { if (visionDB[stage]) { for (const year in storedVisionDB[stage].years) { if (!visionDB[stage].years[year]) visionDB[stage].years[year] = {}; Object.assign(visionDB[stage].years[year], storedVisionDB[stage].years[year]); } } } }
+    let monthVisionDB = JSON.parse(localStorage.getItem('monthVisionDB')) || initialMonthData;
+    
+    const finFieldsToRender = [ 'Salary me', 'Salary him', 'Ck đưa actual', 'Sal out me', 'Sal out him', 'Business income', 'Trả nợ', 'Trả nợ vikki', 'Trả nợ tín dụng ck', 'Trả nợ tín dụng vk', 'Phí QL', 'Tiền điện', 'Cp Intel', 'Cash dư', 'Tích sản 1 chỉ', 'Tiêu lố', 'Note' ];
+    const finDefaultSalValues = { 'Salary me': '41,717,885', 'Salary him': '83,000,000', 'Ck đưa actual': '18,000,000', 'Sal out me': '0', 'Sal out him': '0', 'Business income': '0', 'Trả nợ': '16,700,000', 'Trả nợ vikki': '5,000,000', 'Trả nợ tín dụng ck': '3,300,000', 'Trả nợ tín dụng vk': '3,567,241', 'Phí QL': '2,374,626', 'Tiền điện': '2,070,000', 'Cp Intel': '0', 'Cash dư': '0', 'Tích sản 1 chỉ': '4,140,000', 'Tiêu lố': '0', 'Note': '' };
+
+    // =========================================================================
+    // ==================== GENERAL INIT & RENDER ==============================
+    // =========================================================================
+    window.onload = function() {
+        lucide.createIcons();
+        setDefaultDate();
+        renderAllDashboard();
+        switchTab('dashboard'); // Start on dashboard
+        document.getElementById('qly-focus-textarea').value = focusDB.qly || "";
+    };
+
+    function renderAllDashboard() {
+        renderYearGoals();
+        renderHabitTracker();
+        renderLogsTable(); 
+        initScoringChart(); 
+        initRadarChart(); 
+        updateProgressSummary();
+    }
+    
+    function renderAllFinance() {
+        populateYearSelector();
+        syncSalValuesFromExcel();
+        renderAssetCharts();
+        calculateAndDisplay(); 
+        document.getElementById('fin-log-date').valueAsDate = new Date();
+    }
+    
+    function renderAllPlanner() {
+        renderVisionBoard();
+        renderMonthCompass();
+        renderPlannerGrid();
+    }
+
+    function setDefaultDate() {
+        const todayStr = formatDateISO(new Date());
+        const dateInput = document.getElementById('input-date');
+        if (dateInput) { 
+            dateInput.value = todayStr; 
+            loadPlannedMITForDate(todayStr); 
+            updateMiniBadges(todayStr); 
+        }
+    }
+    
+    function switchTab(tabName) {
+        document.getElementById('tab-dashboard').classList.toggle('hidden', tabName !== 'dashboard');
+        document.getElementById('tab-planner').classList.toggle('hidden', tabName !== 'planner');
+        document.getElementById('tab-finance').classList.toggle('hidden', tabName !== 'finance');
+        
+        document.querySelectorAll('[id^="tab-btn-"]').forEach(btn => {
+            btn.className = "px-5 py-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 font-bold text-sm flex items-center gap-2";
+        });
+        
+        const activeBtn = document.getElementById(`tab-btn-${tabName}`);
+        activeBtn.className = "px-5 py-3 border-b-2 border-[#008f68] text-[#008f68] font-bold text-sm flex items-center gap-2";
+
+        if (tabName === 'dashboard') {
+            setDefaultDate(); 
+            setTimeout(() => { initScoringChart(); initRadarChart(); }, 50);
+        } else if (tabName === 'planner') {
+            if (!plannerTabLoaded) { renderAllPlanner(); plannerTabLoaded = true; }
+            else { renderPlannerGrid(); } 
+        } else if (tabName === 'finance') {
+             if (!financeTabLoaded) { onFinanceTabLoad(); financeTabLoaded = true; }
+        }
+    }
+
+    // =========================================================================
+    // ==================== DASHBOARD FUNCTIONS (KleaOS) =======================
+    // =========================================================================
+
+    // --- Progress Năm ---
+    function renderYearGoals() {
+        const listEl = document.getElementById(`year-goals-list`);
+        const barEl = document.getElementById(`year-progress-bar`);
+        if (!listEl || !barEl) return;
+
+        listEl.innerHTML = '';
+        let completedCount = 0;
+
+        yearGoals.forEach((goal, index) => {
+            if (goal.done) completedCount++;
+            const [pillar, ...titleParts] = goal.text.split(':');
+            const title = titleParts.length > 0 ? titleParts.join(':').trim() : pillar.trim();
+            const pillarDisplay = titleParts.length > 0 ? `<strong class="text-slate-800">${pillar}:</strong>` : '';
+
+            const item = document.createElement('div');
+            item.className = 'flex items-center gap-2';
+            item.innerHTML = `
+                <input type="checkbox" id="year-goal-${index}" ${goal.done ? 'checked' : ''} onchange="toggleYearGoal(${index})" class="h-3.5 w-3.5 rounded border-gray-300 accent-[#008f68] cursor-pointer">
+                <label for="year-goal-${index}" class="cursor-pointer truncate ${goal.done ? 'line-through text-slate-400' : ''}" title="${goal.text}">
+                    ${pillarDisplay} ${title}
+                </label>
+            `;
+            listEl.appendChild(item);
+        });
+
+        const progress = yearGoals.length > 0 ? (completedCount / yearGoals.length) * 100 : 0;
+        barEl.style.width = `${progress}%`;
+    }
+
+    function toggleYearGoal(index) {
+        yearGoals[index].done = !yearGoals[index].done;
+        localStorage.setItem('yearGoals', JSON.stringify(yearGoals));
+        renderYearGoals();
+    }
+
+    // --- Habit Tracker (IMPROVED) ---
+    function renderHabitTracker() {
+        const listEl = document.getElementById('habit-tracker-list');
+        if (!listEl) return;
+        const selectedDateStr = document.getElementById('input-date').value;
+        listEl.innerHTML = '';
+
+        // Sort habits: not done first, then done
+        const sortedHabits = [...habits].sort((a, b) => {
+            const aDone = a.lastLog === selectedDateStr;
+            const bDone = b.lastLog === selectedDateStr;
+            return aDone - bDone;
+        });
+
+        sortedHabits.forEach(habit => {
+            const habitIndex = habits.findIndex(h => h.name === habit.name);
+            const isDoneForSelectedDate = habit.lastLog === selectedDateStr;
+            const isHabitFormed = habit.streak >= 60;
+            const progress = Math.min((habit.streak / 60) * 100, 100);
+
+            let btnClass = "bg-slate-100 text-slate-400 hover:bg-slate-200";
+            let icon = "plus";
+            if (isHabitFormed) {
+                btnClass = "bg-yellow-400 text-white shadow-sm pointer-events-none"; 
+                icon = "award";
+            } else if (isDoneForSelectedDate) {
+                btnClass = "bg-emerald-500 text-white shadow-sm";
+                icon = "check";
+            }
+
+            const item = document.createElement('div');
+            item.className = "flex items-center gap-3";
+            item.innerHTML = `
+                <button onclick="${isHabitFormed ? '' : `logHabit(${habitIndex})`}" class="p-2 rounded-full transition flex-shrink-0 ${btnClass}">
+                    <i data-lucide="${icon}" class="w-4 h-4"></i>
+                </button>
+                <div class="flex-1 min-w-0">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="font-semibold text-xs text-slate-800 truncate pr-2 ${isHabitFormed ? 'text-yellow-600' : ''}">${habit.name}</span>
+                        <span class="text-[10px] font-bold whitespace-nowrap ${isHabitFormed ? 'text-yellow-600' : (progress > 0 ? 'text-emerald-600' : 'text-slate-400')}">
+                            ${isHabitFormed ? 'Hoàn thành!' : `${habit.streak}/60`}
+                        </span>
+                    </div>
+                    <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                        <div class="${isHabitFormed ? 'bg-yellow-400' : 'bg-emerald-400'} h-full rounded-full transition-all duration-500" style="width: ${progress}%"></div>
+                    </div>
+                </div>
+            `;
+            listEl.appendChild(item);
+        });
+        lucide.createIcons();
+    }
+
+    function logHabit(index) {
+        const selectedDateStr = document.getElementById('input-date').value;
+        if (!selectedDateStr) { alert("Vui lòng chọn ngày để log habit."); return; }
+
+        const habit = habits[index];
+        if (habit.lastLog === selectedDateStr || habit.streak >= 60) return;
+
+        const selectedDate = new Date(selectedDateStr);
+        const yesterday = new Date(selectedDate);
+        yesterday.setDate(yesterday.getDate() - 1);
+
+        if (habit.lastLog === formatDateISO(yesterday)) {
+            habit.streak++; 
+        } else {
+            habit.streak = 1; 
+        }
+        habit.lastLog = selectedDateStr;
+        localStorage.setItem('habits', JSON.stringify(habits));
+        renderHabitTracker();
+    }
+
+    // --- Modal Editor ---
+    function openGoalEditor() {
+        currentGoalEditor = 'year';
+        document.getElementById('editor-title').innerText = 'Chỉnh sửa Mục tiêu Năm';
+        const list = document.getElementById('editor-list');
+        list.innerHTML = '';
+        yearGoals.forEach((goal, index) => list.appendChild(createEditorInput(goal.text, index)));
+        document.getElementById('editor-modal').classList.remove('hidden');
+        lucide.createIcons();
+    }
+
+    function openHabitEditor() {
+        currentGoalEditor = 'habit';
+        document.getElementById('editor-title').innerText = 'Chỉnh sửa Thói quen';
+        const list = document.getElementById('editor-list');
+        list.innerHTML = '';
+        habits.forEach((habit, index) => list.appendChild(createEditorInput(habit.name, index, habit.streak)));
+        document.getElementById('editor-modal').classList.remove('hidden');
+        lucide.createIcons();
+    }
+
+    function createEditorInput(value, index, extraInfo = '') {
+        const div = document.createElement('div');
+        div.className = 'flex items-center gap-2 mb-2';
+        const extraText = extraInfo !== '' ? `<span class="text-[10px] text-slate-400 w-12 text-right">${extraInfo}/60</span>` : '';
+        div.innerHTML = `
+            <input type="text" value="${value}" data-index="${index}" class="editor-input flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
+            ${extraText}
+            <button onclick="this.parentElement.remove()" class="p-2 text-red-400 hover:bg-red-50 rounded-lg transition"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+        `;
+        return div;
+    }
+
+    function addItemToEditor() {
+        const list = document.getElementById('editor-list');
+        list.appendChild(createEditorInput('', list.children.length));
+        lucide.createIcons();
+    }
+
+    function closeEditor() {
+        document.getElementById('editor-modal').classList.add('hidden');
+        currentGoalEditor = null;
+    }
+
+    function saveEditor() {
+        const list = document.getElementById('editor-list');
+        if (currentGoalEditor === 'year') {
+            const newGoals = [];
+            list.querySelectorAll('.editor-input').forEach(input => {
+                if (input.value.trim() !== '') {
+                    const oldGoal = yearGoals[input.dataset.index];
+                    newGoals.push({ text: input.value.trim(), done: oldGoal ? oldGoal.done : false });
+                }
+            });
+            yearGoals = newGoals;
+            localStorage.setItem('yearGoals', JSON.stringify(yearGoals));
+            renderYearGoals();
+        } else if (currentGoalEditor === 'habit') {
+            const newHabits = [];
+            list.querySelectorAll('.editor-input').forEach(input => {
+                if (input.value.trim() !== '') {
+                    const oldHabit = habits[input.dataset.index];
+                    newHabits.push({ name: input.value.trim(), streak: oldHabit ? oldHabit.streak : 0, lastLog: oldHabit ? oldHabit.lastLog : "" });
+                }
+            });
+            habits = newHabits;
+            localStorage.setItem('habits', JSON.stringify(habits));
+            renderHabitTracker();
+        }
+        closeEditor();
+    }
+
+    // --- QLY Focus ---
+    function saveFocus(value) {
+        focusDB.qly = value;
+        localStorage.setItem('focusDB', JSON.stringify(focusDB));
+    }
+
+    // --- Ghi nhận & Lưu điểm ---
+    function updateProgressSummary() {
+        const sumEl = document.getElementById('progressSummary');
+        if (sumEl) sumEl.innerText = `${dailyLogs.filter(log => log.score > 0).length} Ngày`;
+    }
+
+    function loadPlannedMITForDate(dateStr) {
+        const pb = document.getElementById('planned-preview-box');
+        const pm = document.getElementById('input-planned-mit');
+        const pn = document.getElementById('input-planned-notes');
+        if (!pb || !pm) return;
+        pm.value = plannerDB[dateStr]?.mit || ''; 
+        if(pn) pn.value = plannerDB[dateStr]?.notes || '';
+        pb.classList.remove('hidden');
+    }
+
+    function syncPlannedToDB() {
+        const dateStr = document.getElementById('input-date').value;
+        const mit = document.getElementById('input-planned-mit').value;
+        const notes = document.getElementById('input-planned-notes')?.value || "";
+        if (!dateStr) return;
+        if (mit.trim() || notes.trim()) {
+            if(!plannerDB[dateStr]) plannerDB[dateStr] = {};
+            plannerDB[dateStr].mit = mit;
+            plannerDB[dateStr].notes = notes;
+        } else {
+            delete plannerDB[dateStr];
+        }
+        localStorage.setItem('plannerDB', JSON.stringify(plannerDB));
+        if (!document.getElementById('tab-planner').classList.contains('hidden')) renderPlannerGrid();
+    }
+
+    function updateMiniBadges(dateStr) {
+        const cl = dailyLogs.find(l => l.date === dateStr) || { job: 0, hea: 0, fin: 0, lea: 0, fam: 0 };
+        document.getElementById('score-job').innerText = cl.job || 0; document.getElementById('score-hea').innerText = cl.hea || 0;
+        document.getElementById('score-fin').innerText = cl.fin || 0; document.getElementById('score-lea').innerText = cl.lea || 0;
+        document.getElementById('score-fam').innerText = cl.fam || 0;
+    }
+
+    function calculateRealTimeScore() {
+        const j = parseInt(document.getElementById('input-p-job').value)||0; const h = parseInt(document.getElementById('input-p-hea').value)||0;
+        const f = parseInt(document.getElementById('input-p-fin').value)||0; const l = parseInt(document.getElementById('input-p-lea').value)||0; const fa = parseInt(document.getElementById('input-p-fam').value)||0;
+        let bs = 0; 
+        const weekChecked = document.getElementById('bonus-week').checked; const monthChecked = document.getElementById('bonus-month').checked;
+        if (weekChecked) bs += 0.25; if (monthChecked) bs += 0.50;
+        return { totalScore: j+h+f+l+fa+bs, bonusDetails: { week: weekChecked, month: monthChecked } };
+    }
+
+    function saveDailyLog() {
+        const date = document.getElementById('input-date').value;
+        if (!date) { alert('Vui lòng chọn ngày!'); return; }
+        const { totalScore, bonusDetails } = calculateRealTimeScore();
+        const logData = { date, job: parseInt(document.getElementById('input-p-job').value)||0, hea: parseInt(document.getElementById('input-p-hea').value)||0, fin: parseInt(document.getElementById('input-p-fin').value)||0, lea: parseInt(document.getElementById('input-p-lea').value)||0, fam: parseInt(document.getElementById('input-p-fam').value)||0, score: totalScore, bonus: bonusDetails, mit: document.getElementById('input-mit-diary').value, notes: document.getElementById('input-notes').value };
+        const i = dailyLogs.findIndex(l => l.date === date);
+        if (i > -1) dailyLogs[i] = logData; else dailyLogs.push(logData);
+        localStorage.setItem('dailyLogs', JSON.stringify(dailyLogs));
+        cancelEditMode();
+        document.getElementById('input-mit-diary').value = ''; document.getElementById('input-notes').value = '';
+        ['job', 'hea', 'fin', 'lea', 'fam'].forEach(p => document.getElementById(`input-p-${p}`).value = '0');
+        document.getElementById('bonus-week').checked = false; document.getElementById('bonus-month').checked = false;
+        renderAllDashboard();
+        alert('Ghi nhận thành công!');
+    }
+
+    function editLog(dateStr) {
+        const log = dailyLogs.find(l => l.date === dateStr); if (!log) return;
+        isEditMode = true; editTargetDate = dateStr;
+        document.getElementById('form-header-title').innerText = `Sửa Log Ngày ${formatDateVN(dateStr)}`;
+        document.getElementById('btn-cancel-edit').classList.remove('hidden');
+        document.getElementById('input-date').value = log.date; 
+        document.getElementById('input-mit-diary').value = log.mit || ''; 
+        document.getElementById('input-notes').value = log.notes || '';
+        ['job', 'hea', 'fin', 'lea', 'fam'].forEach(p => document.getElementById(`input-p-${p}`).value = log[p]||0);
+        if (typeof log.bonus === 'object' && log.bonus !== null) { document.getElementById('bonus-week').checked = log.bonus.week || false; document.getElementById('bonus-month').checked = log.bonus.month || false; } else { document.getElementById('bonus-week').checked = false; document.getElementById('bonus-month').checked = false; }
+        loadPlannedMITForDate(log.date); updateMiniBadges(log.date); renderHabitTracker();
+        document.getElementById('input-date').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function cancelEditMode() {
+        isEditMode = false; editTargetDate = '';
+        document.getElementById('form-header-title').innerText = 'Ghi Nhận Ngày Mới';
+        document.getElementById('btn-cancel-edit').classList.add('hidden');
+        setDefaultDate();
+        renderHabitTracker();
+    }
+
+    // --- Các biểu đồ ---
+    function initScoringChart() { 
+        const canvasEl = document.getElementById('dailyScoringChartCanvas'); if (!canvasEl) return;
+        const sortedLogs = [...dailyLogs].sort((a, b) => new Date(a.date) - new Date(b.date)).slice(-7);
+        const labels = sortedLogs.map(l => { const p = l.date.split('-'); return `${p[2]}-${p[1]}`; });
+        const dataScores = sortedLogs.map(l => l.score);
+        const ctx = canvasEl.getContext('2d');
+        if (dailyScoringChart) dailyScoringChart.destroy();
+        const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+        gradient.addColorStop(0, 'rgba(0, 143, 104, 0.15)'); gradient.addColorStop(1, 'rgba(0, 143, 104, 0.0)');
+        dailyScoringChart = new Chart(ctx, { type: 'line', data: { labels: labels, datasets: [ { data: dataScores, borderColor: '#008f68', borderWidth: 3, backgroundColor: gradient, fill: true, tension: 0.35, pointBackgroundColor: '#008f68', pointRadius: 4 }, { data: Array(labels.length).fill(5), borderColor: '#ef4444', borderWidth: 1.5, borderDash: [5, 5], pointRadius: 0, fill: false } ] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 10 }, x: { grid: { display: false } } } } });
+    }
+
+    function initRadarChart() { 
+        const canvasEl = document.getElementById('radarChartCanvas'); if (!canvasEl) return;
+        const filterType = document.getElementById('radar-filter').value;
+        const targetDate = new Date(document.getElementById('input-date').value || '2026-08-22');
+        let filteredLogs = dailyLogs;
+        if (filterType === 'day') filteredLogs = dailyLogs.filter(l => l.date === formatDateISO(targetDate));
+        else if (filterType === 'month') filteredLogs = dailyLogs.filter(l => new Date(l.date).getMonth() === targetDate.getMonth() && new Date(l.date).getFullYear() === targetDate.getFullYear());
+        else if (filterType === 'year') filteredLogs = dailyLogs.filter(l => new Date(l.date).getFullYear() === targetDate.getFullYear());
+        let t = { job: 0, hea: 0, fin: 0, lea: 0, fam: 0 };
+        filteredLogs.forEach(l => { t.job += l.job||0; t.hea += l.hea||0; t.fin += l.fin||0; t.lea += l.lea||0; t.fam += l.fam||0; });
+        ['job', 'hea', 'fin', 'lea', 'fam'].forEach(p => document.getElementById(`radar-sum-${p}`).innerText = t[p]);
+        const ctx = canvasEl.getContext('2d');
+        if (radarChart) radarChart.destroy();
+        radarChart = new Chart(ctx, { type: 'radar', data: { labels: ['Job', 'Health', 'Finance', 'Learn', 'Family'], datasets: [{ data: [t.job, t.hea, t.fin, t.lea, t.fam], backgroundColor: 'rgba(99, 102, 241, 0.1)', borderColor: '#6366f1', pointBackgroundColor: '#6366f1' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { r: { ticks: { display: false }, suggestedMin: 0 } } } });
+    }
+
+    // --- Bảng lịch sử & Tooltip (IMPROVED) ---
+    function showTooltip(event, text) {
+        const tt = document.getElementById('custom-tooltip');
+        if(!text || text === '-' || text.trim() === '') return;
+        tt.innerText = text;
+        tt.classList.remove('hidden');
+        tt.style.opacity = 1;
+        moveTooltip(event);
+    }
+    function moveTooltip(event) {
+        const tt = document.getElementById('custom-tooltip');
+        if(tt.classList.contains('hidden')) return;
+        let x = event.clientX + 15; let y = event.clientY + 15;
+        if (x + tt.offsetWidth > window.innerWidth) x = window.innerWidth - tt.offsetWidth - 10;
+        if (y + tt.offsetHeight > window.innerHeight) y = event.clientY - tt.offsetHeight - 15;
+        tt.style.left = x + 'px'; tt.style.top = y + 'px';
+    }
+    function hideTooltip() {
+        const tt = document.getElementById('custom-tooltip');
+        tt.style.opacity = 0;
+        setTimeout(() => tt.classList.add('hidden'), 200);
+    }
+
+    function escapeHtml(str) { return str ? String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'})[m]) : ''; }
+
+    function renderLogsTable(filteredLogs = null) {
+        const tbody = document.getElementById('logs-table-body'); if (!tbody) return;
+        tbody.innerHTML = '';
+        const logsToRender = filteredLogs || [...dailyLogs].sort((a, b) => new Date(b.date) - new Date(a.date));
+        logsToRender.forEach(log => {
+            const tr = document.createElement('tr'); tr.className = "hover:bg-slate-50 transition border-b border-slate-100";
+            const safeMit = escapeHtml(log.mit || '-');
+            const safeNotes = escapeHtml(log.notes || '-');
+            tr.innerHTML = `
+                <td class="py-3 px-6"><span class="text-blue-500 font-bold">${log.job||0}</span>-<span class="text-[#008f68] font-bold">${log.hea||0}</span>-<span class="text-amber-500 font-bold">${log.fin||0}</span>-<span class="text-purple-500 font-bold">${log.lea||0}</span>-<span class="text-rose-500 font-bold">${log.fam||0}</span></td>
+                <td class="py-3 px-6 text-center font-bold"><span class="px-3 py-1 rounded-full text-xs ${log.score >= 5 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700'}">${Math.round((log.score/5)*100)}% (${log.score}đ)</span></td>
+                <td class="py-3 px-6 text-center"><button onclick="editLog('${log.date}')" class="px-3 py-1.5 bg-violet-50 text-violet-600 rounded-lg hover:bg-violet-100"><i data-lucide="edit-3" class="w-3.5 h-3.5 mx-auto"></i></button></td>
+                <td class="py-3 px-6 font-semibold">${formatDateVN(log.date)}</td>
+                <td class="py-3 px-6 max-w-[200px] truncate cursor-help hover:text-blue-600 transition" onmouseenter="showTooltip(event, '${safeMit}')" onmousemove="moveTooltip(event)" onmouseleave="hideTooltip()">${safeMit}</td>
+                <td class="py-3 px-6 max-w-[200px] truncate text-slate-500 italic cursor-help hover:text-blue-600 transition" onmouseenter="showTooltip(event, '${safeNotes}')" onmousemove="moveTooltip(event)" onmouseleave="hideTooltip()">${safeNotes}</td>`;
+            tbody.appendChild(tr);
+        });
+        lucide.createIcons();
+    }
+    
+    function filterLogs() {
+        const q = document.getElementById('log-search').value.toLowerCase();
+        renderLogsTable(dailyLogs.filter(l => l.date.includes(q) || (l.mit||'').toLowerCase().includes(q) || (l.notes||'').toLowerCase().includes(q)));
+    }
+
+
+    // =========================================================================
+    // ==================== TRACK E++ ENGINE (Planner) =========================
+    // =========================================================================
+    
+    function renderVisionBoard() {
+        const container = document.getElementById('vision-tables-container'); if (!container) return;
+        container.innerHTML = ''; 
+        const stageFilter = document.getElementById('vision-stage-filter').value;
+        for (const stageKey in visionDB) {
+            const stage = visionDB[stageKey];
+            let tableHTML = `<div id="vision-table-${stageKey}" class="vision-stage-table" style="display: ${stageFilter === stageKey ? 'block' : 'none'};"><div class="p-4 bg-slate-50 border-b border-slate-200"><h4 class="font-bold text-slate-800">${stage.stageTitle}</h4></div><div class="max-h-[300px] overflow-y-auto custom-scrollbar"><table class="w-full border-collapse table-fixed"><thead class="bg-slate-100/80 text-[11px] font-bold text-slate-600 uppercase text-left sticky top-0 z-10 shadow-sm"><tr class="divide-x divide-slate-200"><th class="py-2.5 px-3 w-[70px] text-center">Năm</th><th class="py-2.5 px-3 w-[150px]">🌟 Focus</th><th class="py-2.5 px-3">❤️ Fam</th><th class="py-2.5 px-3">🥗 Health</th><th class="py-2.5 px-3">💼 Career</th><th class="py-2.5 px-3">💰 Fin</th><th class="py-2.5 px-3">📖 Learn</th></tr></thead><tbody class="text-xs divide-y divide-slate-200">`;
+            const yearsToShow = Object.keys(stage.years);
+            if (yearsToShow.length > 0) { yearsToShow.forEach(year => { const yData = stage.years[year]; tableHTML += `<tr class="divide-x divide-slate-200 align-top hover:bg-slate-50/30"><td class="p-2 font-bold text-center bg-slate-50/70">${year}</td><td class="p-0"><textarea class="vision-cell custom-scrollbar" data-stage="${stageKey}" data-year="${year}" data-pillar="focus" placeholder="...">${yData.focus||''}</textarea></td><td class="p-0"><textarea class="vision-cell custom-scrollbar" data-stage="${stageKey}" data-year="${year}" data-pillar="fam">${yData.fam||''}</textarea></td><td class="p-0"><textarea class="vision-cell custom-scrollbar" data-stage="${stageKey}" data-year="${year}" data-pillar="health">${yData.health||''}</textarea></td><td class="p-0"><textarea class="vision-cell custom-scrollbar" data-stage="${stageKey}" data-year="${year}" data-pillar="career">${yData.career||''}</textarea></td><td class="p-0"><textarea class="vision-cell custom-scrollbar" data-stage="${stageKey}" data-year="${year}" data-pillar="fin">${yData.fin||''}</textarea></td><td class="p-0"><textarea class="vision-cell custom-scrollbar" data-stage="${stageKey}" data-year="${year}" data-pillar="learn">${yData.learn||''}</textarea></td></tr>`; }); } else { tableHTML += `<tr><td colspan="7" class="text-center p-8 text-slate-400">Chưa có dữ liệu.</td></tr>`; }
+            tableHTML += `</tbody></table></div></div>`;
+            container.innerHTML += tableHTML;
+        }
+        document.querySelectorAll('.vision-cell').forEach(cell => cell.addEventListener('change', saveVisionCell));
+    }
+
+    function renderMonthCompass() {
+        const container = document.getElementById('month-compass-container'); if (!container) return;
+        let tableHTML = `<table class="w-full border-collapse table-fixed"><thead class="bg-slate-100/80 text-[11px] font-bold text-slate-600 uppercase text-left sticky top-0 z-10 shadow-sm border-b border-slate-200"><tr class="divide-x divide-slate-200"><th class="py-2.5 px-3 w-[70px] text-center">Tháng</th><th class="py-2.5 px-3 w-[120px]">📊 Status</th><th class="py-2.5 px-3">❤️ Fam</th><th class="py-2.5 px-3">🥗 Health</th><th class="py-2.5 px-3">💼 Career</th><th class="py-2.5 px-3">💰 Fin</th><th class="py-2.5 px-3">📖 Learn</th></tr></thead><tbody class="text-xs divide-y divide-slate-200">`;
+        monthNames.forEach(month => { const mData = monthVisionDB[month] || {}; tableHTML += `<tr class="divide-x divide-slate-200 align-top hover:bg-slate-50/40"><td class="p-2 font-bold text-center bg-slate-50/70 sticky left-0 z-0">${month}</td><td class="p-0"><textarea class="month-cell custom-scrollbar" data-month="${month}" data-pillar="status" placeholder="...">${mData.status||''}</textarea></td><td class="p-0"><textarea class="month-cell custom-scrollbar" data-month="${month}" data-pillar="fam">${mData.fam||''}</textarea></td><td class="p-0"><textarea class="month-cell custom-scrollbar" data-month="${month}" data-pillar="health">${mData.health||''}</textarea></td><td class="p-0"><textarea class="month-cell custom-scrollbar" data-month="${month}" data-pillar="career">${mData.career||''}</textarea></td><td class="p-0"><textarea class="month-cell custom-scrollbar" data-month="${month}" data-pillar="fin">${mData.fin||''}</textarea></td><td class="p-0"><textarea class="month-cell custom-scrollbar" data-month="${month}" data-pillar="learn">${mData.learn||''}</textarea></td></tr>`; });
+        tableHTML += `</tbody></table>`;
+        container.innerHTML = tableHTML;
+        document.querySelectorAll('.month-cell').forEach(cell => cell.addEventListener('change', saveMonthVisionCell));
+    }
+
+    function renderPlannerGrid() {
+        const gridBody = document.getElementById('planner-grid-body'); if (!gridBody) return;
+        gridBody.innerHTML = '';
+        document.getElementById('planner-month-year').innerText = plannerBaseDate.toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' });
+        const startOfPlanner = new Date(plannerBaseDate);
+        startOfPlanner.setDate(startOfPlanner.getDate() - (startOfPlanner.getDay() + 6) % 7);
+        for (let w = 0; w < 4; w++) { 
+            const tr = document.createElement('tr');
+            const weekDate = new Date(startOfPlanner); weekDate.setDate(startOfPlanner.getDate() + w * 7);
+            const firstDayOfWeek = new Date(weekDate);
+            const tdHeader = document.createElement('td'); tdHeader.className = "p-2 border-r border-slate-200 align-top text-center bg-slate-50/80 sticky left-0 z-0"; tdHeader.innerHTML = `<div class="text-lg font-bold text-[#008f68] mt-2">W${w+1}</div><div class="text-[10px] text-slate-500 font-semibold">${firstDayOfWeek.getDate()}/${firstDayOfWeek.getMonth()+1}</div>`;
+            tr.appendChild(tdHeader);
+            for (let d = 0; d < 7; d++) {
+                const cellDate = new Date(weekDate); cellDate.setDate(weekDate.getDate() + d);
+                const isoStr = formatDateISO(cellDate);
+                const displayText = plannerDB[isoStr]?.mit || "";
+                const td = document.createElement('td'); td.className = "p-0 border-r border-slate-200 align-top relative bg-white group";
+                const isToday = new Date().toISOString().split('T')[0] === isoStr;
+                const todayClass = isToday ? 'bg-emerald-100 text-emerald-800' : 'text-slate-400 group-hover:text-emerald-600 transition';
+                td.innerHTML = `<div class="absolute top-1 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded ${todayClass} z-10 pointer-events-none">${cellDate.getDate()}</div><textarea onchange="savePlannerCellDirect('${isoStr}', this.value)" placeholder="..." class="planner-cell custom-scrollbar">${displayText}</textarea>`;
+                tr.appendChild(td);
+            }
+            gridBody.appendChild(tr);
+        }
+        lucide.createIcons();
+    }
+
+    function saveVisionCell(event) { const cell = event.target; const { stage, year, pillar } = cell.dataset; visionDB[stage].years[year][pillar] = cell.value; localStorage.setItem('visionDB', JSON.stringify(visionDB)); }
+    function saveMonthVisionCell(event) { const cell = event.target; const { month, pillar } = cell.dataset; monthVisionDB[month][pillar] = cell.value; localStorage.setItem('monthVisionDB', JSON.stringify(monthVisionDB)); }
+    function savePlannerCellDirect(dateStr, value) { if (value.trim() === "") { if (plannerDB[dateStr]) delete plannerDB[dateStr]; } else { if (!plannerDB[dateStr]) plannerDB[dateStr] = { mit: value, notes: '' }; else plannerDB[dateStr].mit = value; } localStorage.setItem('plannerDB', JSON.stringify(plannerDB)); }
+    function switchVisionStage(stageToShow) { document.querySelectorAll('.vision-stage-table').forEach(table => table.style.display = 'none'); const activeTable = document.getElementById(`vision-table-${stageToShow}`); if (activeTable) activeTable.style.display = 'block'; }
+    function navigatePlannerWeeks(offset) { plannerBaseDate.setDate(plannerBaseDate.getDate() + (offset * 7)); renderPlannerGrid(); }
+    function resetPlannerToToday() { plannerBaseDate = new Date(); renderPlannerGrid(); }
+    
+    // =========================================================================
+    // ==================== FINANCE TAB FUNCTIONS (KleaFin) ====================
+    // =========================================================================
+    
+    function onFinanceTabLoad() {
+        createSalaryInputForm(finDefaultSalValues);
+        calculateAndDisplay();
+        renderAllFinance();
+        lucide.createIcons(); // Re-init icons for the new tab
+    }
+    
+    function formatNumberWithCommas(strVal) { const raw = String(strVal).replace(/,/g, ''); if (isNaN(raw) || raw === '') return ''; return parseFloat(raw).toLocaleString('vi-VN'); }
+    function parseFormattedNumber(strVal) { return parseFloat(String(strVal).replace(/,/g, '')) || 0; }
+    function handleInputCommaFormatting(input) { const cursorPosition = input.selectionStart; const originalLength = input.value.length; const rawVal = input.value.replace(/[^0-9]/g, ''); if (rawVal === '') { input.value = ''; return; } const formatted = parseFloat(rawVal).toLocaleString('vi-VN'); input.value = formatted; const newLength = input.value.length; input.selectionStart = input.selectionEnd = cursorPosition + (newLength - originalLength); }
+    
+    function populateYearSelector() {
+        const select = document.getElementById('fire-year-select');
+        select.innerHTML = '';
+        const availableYears = [];
+        if(financialData.fire.length > 0) {
+            financialData.fire.slice(2).forEach(row => { const yr = parseInt(row[0]); if (!isNaN(yr)) availableYears.push(yr); });
+        }
+        if (availableYears.length > 0) {
+            availableYears.forEach(year => {
+                const option = document.createElement('option'); option.value = year; option.innerText = year === 2053 ? '2053 (Mốc 56 tuổi)' : `${year}`; if (year === 2026) option.selected = true;
+                select.appendChild(option);
+            });
+        } else { select.innerHTML = '<option value="2026">2026</option><option value="2053">2053</option>'; }
+    }
+
+    function syncSalValuesFromExcel() {
+        if (!financialData.sal || financialData.sal.length < 3) return;
+        const headers = financialData.sal[2]; 
+        const lastDataRow = financialData.sal[financialData.sal.length - 1]; 
+        let mapped = {};
+        finFieldsToRender.forEach(f => {
+            if (f === 'Tiêu lố') { mapped[f] = '0'; return; }
+            if (f === 'Note') { mapped[f] = ''; return; }
+            const idx = headers.findIndex(h => h && h.trim().toLowerCase() === f.toLowerCase());
+            if (idx !== -1 && lastDataRow[idx] !== undefined) { const parsedVal = parseFloat(lastDataRow[idx]) || 0; mapped[f] = parsedVal.toLocaleString('vi-VN'); } else { mapped[f] = '0'; }
+        });
+        createSalaryInputForm(mapped);
+    }
+    
+    function createSalaryInputForm(valuesMap) {
+        const form = document.getElementById('salary-input-form');
+        form.innerHTML = '';
+        finFieldsToRender.forEach(field => {
+            const div = document.createElement('div'); div.className = 'flex flex-col space-y-1';
+            const cleanId = `input-${field.replace(/[^a-zA-Z0-9]/g, '-')}`; const initialVal = valuesMap[field] || '0';
+            if (field === 'Note') { div.innerHTML = `<label class="text-xs font-semibold text-slate-600">${field}</label><input type="text" id="${cleanId}" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none transition" value="${initialVal}" oninput="calculateAndDisplay()">`; } else { div.innerHTML = `<label class="text-xs font-semibold text-slate-600">${field}</label><input type="text" id="${cleanId}" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none transition" value="${initialVal}" oninput="if(this.id !== 'input-Note') handleInputCommaFormatting(this); calculateAndDisplay();">`; }
+            form.appendChild(div);
+        });
+    }
+
+    function calculateAndDisplay() {
+        const getValue = field => { const cleanId = `input-${field.replace(/[^a-zA-Z0-9]/g, '-')}`; const elem = document.getElementById(cleanId); if (!elem) return 0; if (field === 'Note') return elem.value; return parseFormattedNumber(elem.value); };
+        const data = { sal_me: getValue('Salary me'), sal_him: getValue('Salary him'), ck_actual: getValue('Ck đưa actual'), biz_income: getValue('Business income'), tra_no: getValue('Trả nợ'), tra_no_vikki: getValue('Trả nợ vikki'), tra_no_td_ck: getValue('Trả nợ tín dụng ck'), tra_no_td_vk: getValue('Trả nợ tín dụng vk'), phi_ql: getValue('Phí QL'), tien_dien: getValue('Tiền điện'), cp_intel: getValue('Cp Intel'), cash_du: getValue('Cash dư'), tich_san: getValue('Tích sản 1 chỉ'), tieu_lo: getValue('Tiêu lố'), note: getValue('Note') };
+        const monthlySpending = data.tra_no_td_vk + data.phi_ql + data.tien_dien + data.cp_intel + data.tra_no_vikki;
+        const ckShouldDua = data.sal_him - data.tra_no - 3000000;
+        const conLaiBank = 25000000 - data.tra_no_td_vk - data.phi_ql - data.tien_dien - 5600000 - data.tra_no_vikki;
+        const tichLuyVk = data.sal_me - monthlySpending - 14000000 + 5600000;
+        const tongTichLuyCaNha = tichLuyVk + data.ck_actual - data.tich_san;
+        const output = document.getElementById('comparison-output');
+        output.innerHTML = `<div class="space-y-2 text-[11px]"><div class="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100 shadow-inner"><span class="text-slate-500 font-medium">Ck thực tế cần chuyển:</span><span class="font-extrabold text-slate-900">${ckShouldDua.toLocaleString('vi-VN')} đ</span></div><div class="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100 shadow-inner"><span class="text-slate-500 font-medium">Còn lại bank vk (dự kiến):</span><span class="font-extrabold text-blue-700">${conLaiBank.toLocaleString('vi-VN')} đ</span></div><div class="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100 shadow-inner"><span class="text-slate-500 font-medium text-emerald-800">Tích lũy tháng vk (+5.6tr):</span><span class="font-extrabold text-emerald-700">${tichLuyVk.toLocaleString('vi-VN')} đ</span></div><div class="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100 shadow-inner"><span class="text-slate-500 font-medium text-emerald-800">Tổng tích lũy cả nhà (+ck - vàng):</span><span class="font-extrabold text-emerald-800">${tongTichLuyCaNha.toLocaleString('vi-VN')} đ</span></div></div>`;
+        renderFlowChartHistorical(); updateLiquidityAndAssetStructure();
+    }
+    
+    function updateLiquidityAndAssetStructure() {
+        if (!financialData.is || financialData.is.length < 2) { document.getElementById('liquidity-output').innerHTML = `<p class="text-slate-400 italic">Nạp file để tính toán.</p>`; return; }
+        const headers = financialData.is[0]; const dataRows = financialData.is.slice(1).filter(r => r.length > 1 && r[0]); if (dataRows.length === 0) return;
+        const latestAssetRow = dataRows[dataRows.length - 1];
+        const goldIdx = headers.findIndex(h => h && h.trim().toLowerCase() === 'vàng'); const savingsIdx = headers.findIndex(h => h && h.trim().toLowerCase() === 'savings'); const emerIdx = headers.findIndex(h => h && h.trim().toLowerCase() === 'emer');
+        const goldVal = goldIdx !== -1 ? (parseFloat(latestAssetRow[goldIdx]) || 0) : 0; const savingsVal = savingsIdx !== -1 ? (parseFloat(latestAssetRow[savingsIdx]) || 0) : 0; const emerVal = emerIdx !== -1 ? (parseFloat(latestAssetRow[emerIdx]) || 0) : 0;
+        const instantLiquidity = goldVal + savingsVal + emerVal;
+        document.getElementById('liquidity-output').innerHTML = `<div class="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-100 shadow-sm space-y-3"><div><span class="text-[10px] text-emerald-800 font-extrabold block uppercase tracking-widest">Thanh khoản tức thời</span><span class="text-lg font-black text-emerald-700 block mt-1">${instantLiquidity.toLocaleString('vi-VN')} đ</span></div><div class="border-t border-dashed border-emerald-200 pt-2.5 space-y-1.5 text-[10px] text-slate-500"><div class="flex justify-between"><span>Vàng:</span><span class="font-bold text-slate-700">${goldVal.toLocaleString('vi-VN')} đ</span></div><div class="flex justify-between"><span>Savings:</span><span class="font-bold text-slate-700">${savingsVal.toLocaleString('vi-VN')} đ</span></div><div class="flex justify-between"><span>Emer:</span><span class="font-bold text-slate-700">${emerVal.toLocaleString('vi-VN')} đ</span></div></div></div>`;
+    }
+
+    function renderFlowChartHistorical() {
+        if (!financialData.sal || financialData.sal.length < 3) return;
+        const targetYear = document.getElementById('flow-year-select').value;
+        const headers = financialData.sal[2]; const dataRows = financialData.sal.slice(3).filter(r => r.length > 1 && r[0]);
+        const months = []; const flowInPlan = []; const flowInActual = []; const flowOut = [];
+        const currentTieuLo = parseFormattedNumber(document.getElementById('input-Tiêu-lố')?.value || '0');
+        dataRows.forEach(row => {
+            const dateStr = String(row[0]); const parts = dateStr.split('/'); if (parts.length < 3) return;
+            const year = '20' + parts[2]; if (year !== targetYear) return;
+            months.push(`T${parts[1]}/${year}`);
+            const inPlan = parseFloat(row[8]) || 0; const inActual = parseFloat(row[9]) || 0;
+            const outTdCk = parseFloat(row[12]) || 0; const outMonthlySpend = parseFloat(row[13]) || 0;
+            flowInPlan.push(inPlan / 1e6); flowInActual.push(inActual / 1e6); flowOut.push((outTdCk + outMonthlySpend + currentTieuLo) / 1e6);
+        });
+        const ctx = document.getElementById('flow-comparison-chart').getContext('2d');
+        if (flowChart) flowChart.destroy();
+        flowChart = new Chart(ctx, { type: 'line', data: { labels: months, datasets: [ { label: 'In (Kế hoạch)', data: flowInPlan, borderColor: '#3b82f6', borderWidth: 3, tension: 0.3, fill: false, pointBackgroundColor: '#3b82f6', pointRadius: 4 }, { label: 'In (Thực tế)', data: flowInActual, borderColor: '#10b981', borderWidth: 3, tension: 0.3, fill: false, pointBackgroundColor: '#10b981', pointRadius: 4 }, { label: 'Out (Chi tiêu)', data: flowOut, borderColor: '#ef4444', borderWidth: 3, tension: 0.3, fill: false, pointBackgroundColor: '#ef4444', pointRadius: 4 } ] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { callback: v => `${v}M` } } }, plugins: { legend: { position: 'top', labels: { boxWidth: 10, font: { size: 9 } } } } } });
+    }
+    
+    function saveCurrentFinLog() {
+        const dateVal = document.getElementById('fin-log-date').value; if (!dateVal) { alert("Vui lòng chọn ngày ghi nhận dữ liệu!"); return; }
+        const getVal = field => { const cleanId = `input-${field.replace(/[^a-zA-Z0-9]/g, '-')}`; const elem = document.getElementById(cleanId); if (!elem) return ''; if (field === 'Note') return elem.value; return parseFormattedNumber(elem.value); };
+        const me = getVal('Salary me'); const him = getVal('Salary him'); const ck = getVal('Ck đưa actual'); const biz = getVal('Business income'); const tieuLo = getVal('Tiêu lố'); const note = getVal('Note');
+        const spend = getVal('Phí QL') + getVal('Tiền điện') + getVal('Trả nợ vikki') + getVal('Trả nợ tín dụng ck') + getVal('Trả nợ tín dụng vk') + getVal('Cp Intel') + tieuLo;
+        const totalActualIncome = me + ck + biz;
+        const newLog = { date: dateVal, salMe: me, salHim: him, ckActual: ck, totalIn: totalActualIncome, totalOut: spend, tieuLo: tieuLo, note: note };
+        financialData.localLogs.unshift(newLog); updateFinLogTable(); alert("Lưu trữ ngày mới thành công!");
+    }
+
+    function updateFinLogTable() {
+        const tbody = document.getElementById('log-table-body-fin');
+        if (financialData.localLogs.length === 0) { tbody.innerHTML = `<tr><td colspan="8" class="px-4 py-4 text-center text-slate-400">Chưa có lịch sử ghi nhận mới.</td></tr>`; return; }
+        tbody.innerHTML = '';
+        financialData.localLogs.forEach(log => { const tr = document.createElement('tr'); tr.className = "hover:bg-slate-50 transition border-b border-slate-100"; tr.innerHTML = `<td class="px-4 py-2 text-slate-900 font-bold">${log.date}</td><td class="px-4 py-2">${log.salMe.toLocaleString('vi-VN')}</td><td class="px-4 py-2">${log.salHim.toLocaleString('vi-VN')}</td><td class="px-4 py-2 text-indigo-700 font-bold">${log.ckActual.toLocaleString('vi-VN')}</td><td class="px-4 py-2 text-emerald-800 font-extrabold">${log.totalIn.toLocaleString('vi-VN')}</td><td class="px-4 py-2 text-red-600 font-bold">${log.totalOut.toLocaleString('vi-VN')}</td><td class="px-4 py-2 text-amber-600 font-bold">${log.tieuLo.toLocaleString('vi-VN')}</td><td class="px-4 py-2 text-slate-500 italic truncate max-w-[120px]">${log.note || '-'}</td>`; tbody.appendChild(tr); });
+    }
+
+    function exportFinLogsToCSV() {
+        if (financialData.localLogs.length === 0) { alert("Không có lịch sử để xuất file!"); return; }
+        let csvContent = "data:text/csv;charset=utf-8,Ngay Log,Salary me,Salary him,Ck dua actual,Thu nhap thuc te,Chi tieu thuc te,Tieu lo,Ghi chu\\n";
+        financialData.localLogs.forEach(log => { csvContent += `${log.date},${log.salMe},${log.salHim},${log.ckActual},${log.totalIn},${log.totalOut},${log.tieuLo},"${log.note}"\\n`; });
+        const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", `KleaFin_Logs_${new Date().toISOString().slice(0, 10)}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    }
+
+    function renderAssetCharts() {
+        if (!financialData.is || financialData.is.length < 2) return;
+        const timescale = document.getElementById('asset-timescale-filter').value;
+        const assetTypeFilter = document.getElementById('asset-type-filter').value;
+        const headers = financialData.is[0];
+        const dataRows = financialData.is.slice(1).filter(r => r.length > 1 && r[0]);
+
+        // Populate asset type filter
+        const assetTypeSelect = document.getElementById('asset-type-filter');
+        if (assetTypeSelect.options.length <= 1) {
+            assetTypeSelect.innerHTML = '<option value="Tổng tài sản">Tất cả hũ</option>';
+            headers.slice(1, 13).forEach(h => {
+                if (h && h.trim()) assetTypeSelect.innerHTML += `<option value="${h.trim()}">${h.trim()}</option>`;
+            });
+        }
+        
+        const colIndex = headers.findIndex(h => h && h.trim() === assetTypeFilter);
+        const bdsColIndex = headers.findIndex(h => h && (h.toLowerCase().includes('bds')));
+        
+        let aggregatedData = {};
+        dataRows.forEach(row => {
+            const date = new Date(excelDateToJSDate(row[0]));
+            if (isNaN(date.getTime())) return;
+            let key;
+            if (timescale === 'monthly') key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            else if (timescale === 'quarterly') key = `${date.getFullYear()}-Q${Math.floor(date.getMonth() / 3) + 1}`;
+            else key = date.getFullYear();
+            const value = parseFloat(row[colIndex]) || 0;
+            if (value > 0) aggregatedData[key] = value;
+        });
+
+        const labels = Object.keys(aggregatedData).sort();
+        const data = labels.map(key => aggregatedData[key]);
+        const growthCtx = document.getElementById('asset-growth-chart').getContext('2d');
+        if (growthChart) growthChart.destroy();
+        growthChart = new Chart(growthCtx, { type: 'line', data: { labels, datasets: [{ label: assetTypeFilter, data, borderColor: '#10b981', borderWidth: 3, tension: 0.15, fill: true, backgroundColor: 'rgba(16, 185, 129, 0.04)' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } }, scales: { y: { ticks: { callback: v => { if (v >= 1e9) return `${(v/1e9).toFixed(1)} tỷ`; if (v >= 1e6) return `${(v/1e6).toFixed(0)} tr`; return v; } } } } } });
+
+        const latestAssetRow = dataRows[dataRows.length - 1];
+        let portfolio = {};
+        headers.slice(1, 13).forEach((h, i) => { if (i + 1 !== bdsColIndex && h && h.trim() !== "") { const val = parseFloat(latestAssetRow[i+1]) || 0; if (val > 0) portfolio[h.trim()] = val; } });
+        renderPortfolioTreemap(portfolio);
+        renderFireProgress();
+    }
+    
+    function renderPortfolioTreemap(portfolioData) {
+        const ctx = document.getElementById('asset-treemap-chart').getContext('2d');
+        if (treemapChart) treemapChart.destroy();
+        const items = Object.entries(portfolioData).map(([key, value]) => ({name: key, value}));
+        if (items.length === 0) return;
+        const totalExBdsVal = items.reduce((sum, item) => sum + item.value, 0);
+        treemapChart = new Chart(ctx, { type: 'treemap', data: { datasets: [{ tree: items, key: 'value', groups: ['name'], backgroundColor: (ctx) => { const colors = ['#059669', '#3b82f6', '#10b981', '#6366f1', '#a855f7', '#ec4899', '#f43f5e', '#64748b']; return colors[ctx.dataIndex % colors.length]; }, labels: { display: true, color: 'white', font: { size: 11, weight: 'bold' }, formatter: c => { if (c.raw && c.raw.g) { const rawVal = c.raw.v; const pct = totalExBdsVal > 0 ? ((rawVal / totalExBdsVal) * 100).toFixed(1) : '0.0'; const valStr = rawVal >= 1e9 ? `${(rawVal/1e9).toFixed(1)} tỷ` : `${(rawVal/1e6).toFixed(0)} tr`; return `${c.raw.g}\\n${valStr} (${pct}%)`; } return ''; } } }] }, options: { maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+    }
+
+    function renderFireProgress() {
+        if (!financialData.fire || financialData.fire.length < 2) return;
+        const selectedYear = parseInt(document.getElementById('fire-year-select').value) || 2026;
+        document.getElementById('annual-badge-year').innerText = `Năm ${selectedYear}`;
+        const finalRow = financialData.fire[financialData.fire.length - 1];
+        const ultimateGoal = parseFloat(finalRow[13]) || 71210601893.36; 
+        const matchedFireRow = financialData.fire.find(r => r[0] && parseInt(r[0]) === selectedYear);
+        let yearTargetGoal = 13004846985; if (matchedFireRow) { yearTargetGoal = parseFloat(matchedFireRow[13]) || yearTargetGoal; }
+        const dataRows = financialData.is.slice(1).filter(r => r.length > 1 && r[0]);
+        if (dataRows.length === 0) return;
+        const latestAssetRow = dataRows[dataRows.length - 1];
+        const currentTotalAssets = parseFloat(latestAssetRow[13]) || 0;
+        const ultimateProgress = (currentTotalAssets / ultimateGoal) * 100;
+        document.getElementById('fire-jar-fill').style.height = `${Math.min(ultimateProgress, 100)}%`;
+        document.getElementById('fire-progress-text').innerText = `${ultimateProgress.toFixed(2)}%`;
+        document.getElementById('current-asset-display').innerText = `${(currentTotalAssets/1e9).toFixed(2)} tỷ`;
+        document.getElementById('fire-target-display').innerText = `${(ultimateGoal/1e9).toFixed(2)} tỷ`;
+        const annualProgress = (currentTotalAssets / yearTargetGoal) * 100;
+        document.getElementById('annual-jar-fill').style.height = `${Math.min(annualProgress, 100)}%`;
+        document.getElementById('annual-progress-text').innerText = `${annualProgress.toFixed(2)}%`;
+        document.getElementById('annual-actual-display').innerText = `${(currentTotalAssets/1e9).toFixed(2)} tỷ`;
+        document.getElementById('annual-target-display').innerText = `${(yearTargetGoal/1e9).toFixed(2)} tỷ`;
+        renderOrdered13Jars(latestAssetRow, matchedFireRow);
+        updateLiquidityAndAssetStructure();
+    }
+
+    function renderOrdered13Jars(latestAssetRow, matchedFireRow) {
+        const jarsGrid = document.getElementById('jars-grid'); jarsGrid.innerHTML = '';
+        const isHeaders = financialData.is[0]; const fireHeaders = financialData.fire[1]; 
+        const orderedKeys = [ { key: 'BDS', display: 'BĐS' }, { key: 'Emer', display: 'Emer' }, { key: 'Savings', display: 'Savings' }, { key: 'Nợ', display: 'Nợ' }, { key: 'Vàng', display: 'Vàng' }, { key: 'Bạc', display: 'Bạc' }, { key: 'CK', display: 'Ck' }, { key: 'Cp Intel', display: 'Cp Intel' }, { key: 'PAXG', display: 'PAXG' }, { key: 'BTC', display: 'BTC' }, { key: 'USDT+SOL', display: 'USDT+SOL' }, { key: 'Vikki', display: 'Vikki' } ];
+        orderedKeys.forEach(assetItem => {
+            const isColIdx = isHeaders.findIndex(h => { if (!h) return false; const hNorm = h.trim().toLowerCase(); const assetNorm = assetItem.key.toLowerCase(); return hNorm === assetNorm || hNorm.includes(assetNorm) || assetNorm.includes(hNorm); });
+            if (isColIdx === -1) return;
+            const actualVal = parseFloat(latestAssetRow[isColIdx]) || 0;
+            let targetVal = 0;
+            if (matchedFireRow && fireHeaders) { const fireColIdx = fireHeaders.findIndex(h => { if (!h) return false; const hNorm = h.trim().toLowerCase(); const assetNorm = assetItem.key.toLowerCase(); return hNorm === assetNorm || hNorm.includes(assetNorm) || assetNorm.includes(hNorm); }); if (fireColIdx !== -1) { targetVal = parseFloat(matchedFireRow[fireColIdx]) || 0; } }
+            if (targetVal === 0) { targetVal = actualVal; } const progress = targetVal > 0 ? (actualVal / targetVal) * 100 : 0;
+            const jarCard = document.createElement('div'); jarCard.className = 'bg-white border border-slate-100 p-3.5 rounded-2xl shadow-sm hover:shadow-md transition duration-200'; jarCard.innerHTML = `<div class="flex justify-between items-start mb-1.5"><span class="text-xs font-bold text-slate-700 truncate block max-w-[140px]">${assetItem.display}</span><span class="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full font-bold">${progress.toFixed(1)}%</span></div><div class="space-y-1"><div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden"><div class="bg-gradient-to-r from-emerald-400 to-emerald-600 h-full progress-bar-fill" style="width: ${Math.min(progress, 100)}%"></div></div><div class="flex justify-between text-[10px] text-slate-400"><span>Thực tế: <b class="text-slate-600">${actualVal >= 1e6 ? (actualVal/1e6).toFixed(1) + 'M' : actualVal.toLocaleString('vi-VN')}</b></span><span>Mục tiêu: <b class="text-emerald-700">${targetVal >= 1e6 ? (targetVal/1e6).toFixed(1) + 'M' : targetVal.toLocaleString('vi-VN')}</b></span></div></div>`;
+            jarsGrid.appendChild(jarCard);
+        });
+    }
+
+    // =========================================================================
+    // ==================== EXCEL IMPORT/EXPORT (UNIFIED) ======================
+    // =========================================================================
+    function exportToExcel() {
+        try {
+            const wb = XLSX.utils.book_new();
+            
+            // 1. DailyLogs
+            const logsSheet = XLSX.utils.json_to_sheet(dailyLogs.map(l => ({ 'Ngày Log': l.date, 'Job':l.job, 'Health':l.hea, 'Fin':l.fin, 'Learn':l.lea, 'Fam':l.fam, 'Score':l.score, 'Bonus': JSON.stringify(l.bonus), 'Nhật Ký MIT':l.mit, 'notes':l.notes })));
+            XLSX.utils.book_append_sheet(wb, logsSheet, "DailyLogs");
+            
+            // 2. PlannerDB
+            const plannerData = Object.entries(plannerDB).map(([date, data])=>({ date, mit: data.mit, notes: data.notes }));
+            const plannerSheet = XLSX.utils.json_to_sheet(plannerData);
+            XLSX.utils.book_append_sheet(wb, plannerSheet, "PlannerDB");
+            
+            // 3. Track 50y
+            const track50yData = [];
+            for(const stage in visionDB) { for(const year in visionDB[stage].years) { const yearData = visionDB[stage].years[year]; track50yData.push({ Type: 'LifeCompass', Period: `${stage}-${year}`, Pillar: 'Focus', Content: yearData.focus || '' }); ['fam','health','career','fin','learn'].forEach(p => { track50yData.push({ Type: 'LifeCompass', Period: `${stage}-${year}`, Pillar: p, Content: yearData[p] || '' }); }); } }
+            monthNames.forEach(month => { const monthData = monthVisionDB[month]; track50yData.push({ Type: 'MonthCompass', Period: month, Pillar: 'Status', Content: monthData.status || '' }); ['fam','health','career','fin','learn'].forEach(p => { track50yData.push({ Type: 'MonthCompass', Period: month, Pillar: p, Content: monthData[p] || '' }); }); });
+            const track50ySheet = XLSX.utils.json_to_sheet(track50yData);
+            XLSX.utils.book_append_sheet(wb, track50ySheet, "Track 50y");
+
+            // 4. Sal (KleaFin) - Đưa dữ liệu mảng 2 chiều ra sheet Sal
+            if (financialData.sal && financialData.sal.length > 0) {
+                const salSheet = XLSX.utils.aoa_to_sheet(financialData.sal);
+                XLSX.utils.book_append_sheet(wb, salSheet, "Sal");
+            }
+
+            // 5. IS (KleaFin) - Đưa dữ liệu mảng 2 chiều ra sheet IS
+            if (financialData.is && financialData.is.length > 0) {
+                const isSheet = XLSX.utils.aoa_to_sheet(financialData.is);
+                XLSX.utils.book_append_sheet(wb, isSheet, "IS");
+            }
+
+            // 6. FIRE (KleaFin) - Đưa dữ liệu mảng 2 chiều ra sheet FIRE
+            if (financialData.fire && financialData.fire.length > 0) {
+                const fireSheet = XLSX.utils.aoa_to_sheet(financialData.fire);
+                XLSX.utils.book_append_sheet(wb, fireSheet, "FIRE");
+            }
+
+            XLSX.writeFile(wb, `Klea_OS_Export_${formatDateISO(new Date())}.xlsx`);
+        } catch (error) { alert('Có lỗi xảy ra khi trích xuất Excel.'); }
+    }
+
+    function handleExcelUpload(event) {
+        const file = event.target.files[0]; if (!file) return;
+        document.getElementById('file-name').innerText = file.name;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                
+                // Read KleaOS data
+                const logsSheet = workbook.Sheets["DailyLogs"];
+                if (logsSheet) { const logsJson = XLSX.utils.sheet_to_json(logsSheet); if (logsJson.length > 0) { dailyLogs = logsJson.map(row => { let parsedBonus = { week: false, month: false }; try { if(typeof row['Bonus'] === 'string') parsedBonus = JSON.parse(row['Bonus']); } catch(e){} return { date: excelDateToJSDate(row['Ngày Log']), job: parseInt(row['Job'])||0, hea: parseInt(row['Health'])||0, fin: parseInt(row['Fin'])||0, lea: parseInt(row['Learn'])||0, fam: parseInt(row['Fam'])||0, score: parseFloat(row['Score'])||0, bonus: parsedBonus, mit: row['Nhật Ký MIT']||'', notes: row['notes']||'' }; }); localStorage.setItem('dailyLogs', JSON.stringify(dailyLogs)); } }
+                
+                const plannerSheet = workbook.Sheets["PlannerDB"];
+                if(plannerSheet) { const plannerJson = XLSX.utils.sheet_to_json(plannerSheet); plannerDB = {}; plannerJson.forEach(r => { const dateStr = excelDateToJSDate(r.date); if (dateStr) { plannerDB[dateStr] = { mit: r.mit || '', notes: r.notes || '' }; } }); localStorage.setItem('plannerDB', JSON.stringify(plannerDB)); }
+                
+                const trackSheetName = workbook.SheetNames.find(name => name.includes('Track'));
+                if (trackSheetName) { const trackSheet = workbook.Sheets[trackSheetName]; const trackJson = XLSX.utils.sheet_to_json(trackSheet); trackJson.forEach(row => { const pillarKey = (row.Pillar || '').toLowerCase(); if (row.Type === 'LifeCompass') { const [stage, year] = row.Period.split('-'); if (visionDB[stage]) { if (!visionDB[stage].years[year]) visionDB[stage].years[year] = {}; visionDB[stage].years[year][pillarKey] = row.Content || ''; } } else if (row.Type === 'MonthCompass') { if (monthVisionDB[row.Period]) { monthVisionDB[row.Period][pillarKey] = row.Content || ''; } } }); localStorage.setItem('visionDB', JSON.stringify(visionDB)); localStorage.setItem('monthVisionDB', JSON.stringify(monthVisionDB)); }
+
+                // Read KleaFin data (Tìm sheet chính xác: Sal, IS, FIRE)
+                const salSheetName = workbook.SheetNames.find(name => name.toLowerCase() === 'sal' || name.toLowerCase().includes('sal'));
+                const isSheetName = workbook.SheetNames.find(name => name.toLowerCase() === 'is'); // Fixed: Match exactly 'is'
+                const fireSheetName = workbook.SheetNames.find(name => name.toLowerCase() === 'fire' || name.toLowerCase().includes('fire'));
+                
+                if (salSheetName) financialData.sal = XLSX.utils.sheet_to_json(workbook.Sheets[salSheetName], { header: 1 });
+                if (isSheetName) financialData.is = XLSX.utils.sheet_to_json(workbook.Sheets[isSheetName], { header: 1 });
+                if (fireSheetName) financialData.fire = XLSX.utils.sheet_to_json(workbook.Sheets[fireSheetName], { header: 1 });
+
+                // Render all components
+                renderAllDashboard();
+                renderAllPlanner(); 
+                
+                // If finance tab is active, re-render it. Otherwise, mark it as needing re-render.
+                if (!document.getElementById('tab-finance').classList.contains('hidden')) { 
+                    renderAllFinance(); 
+                } else { 
+                    financeTabLoaded = false; 
+                } 
+                
+                alert('Nhập dữ liệu (6 tabs) thành công!');
+            } catch (error) { console.error(error); alert('Lỗi định dạng file Excel.'); }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    // ==================== UTILITY FUNCTIONS ================================
+    function formatDateVN(dateStr) { if (!dateStr) return ''; const p = dateStr.split('-'); return `${p[2]}/${p[1]}/${p[0]}`; }
+    function formatDateISO(dateObj) { return dateObj.toISOString().split('T')[0]; }
+    function excelDateToJSDate(serial) {
+        if (typeof serial === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(serial)) return serial;
+        if (typeof serial !== 'number') {
+            try {
+                // Handle 'DD/MM/YYYY' format from CSV
+                if(typeof serial === 'string' && serial.includes('/')) {
+                    const parts = serial.split('/');
+                    return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`).toISOString().split('T')[0];
+                }
+                return new Date(serial).toISOString().split('T')[0];
+            } catch(e) {
+                return formatDateISO(new Date());
+            }
+        }
+        const utc_days  = Math.floor(serial - 25569);
+        const date_info = new Date(utc_days * 86400 * 1000);
+        return formatDateISO(new Date(date_info.getTime() + (date_info.getTimezoneOffset() * 60 * 1000)));
+    }
+    </script>
+</body>
+</html>
