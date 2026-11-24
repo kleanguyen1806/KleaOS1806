@@ -846,15 +846,28 @@
         const monthCompassYearFilter = document.getElementById('month-compass-year-filter');
         if (!scoringYearFilter || !monthCompassYearFilter) return;
 
+        // 1. Lấy năm cho bộ lọc Daily Scoring dựa theo Daily Logs thực tế
         const years = [...new Set(dailyLogs.map(l => new Date(l.date).getFullYear()))].filter(y => !isNaN(y)).sort((a,b) => b-a);
         if (!years.includes(2026)) years.push(2026);
         years.sort((a,b) => b-a);
 
+        // 2. Lấy năm cho Month Compass dựa theo các năm thực tế có trong tab Track_50y (monthVisionDB)
+        let monthCompassYears = Object.keys(monthVisionDB).map(y => parseInt(y)).filter(y => !isNaN(y));
+        if (!monthCompassYears.includes(2026)) {
+            monthCompassYears.push(2026);
+        }
+        monthCompassYears.sort((a, b) => a - b);
+
         scoringYearFilter.innerHTML = '';
         monthCompassYearFilter.innerHTML = '';
 
+        // Render năm cho bộ lọc Scoring
         years.forEach(year => {
             scoringYearFilter.innerHTML += `<option value="${year}">${year}</option>`;
+        });
+
+        // Render năm cho bộ lọc Month Compass từ file import
+        monthCompassYears.forEach(year => {
             monthCompassYearFilter.innerHTML += `<option value="${year}">${year}</option>`;
         });
 
@@ -868,7 +881,6 @@
         }
         scoringMonthFilter.value = new Date().getMonth() + 1;
     }
-
     function initScoringChart() { 
         const canvasEl = document.getElementById('dailyScoringChartCanvas'); if (!canvasEl) return;
         const year = document.getElementById('scoring-year-filter')?.value || 2026;
